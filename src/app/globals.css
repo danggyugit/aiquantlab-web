@@ -39,6 +39,10 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-premium: var(--premium);
+  --color-premium-foreground: var(--premium-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,14 +52,16 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* AI Quant Lab brand tokens — mirrors Streamlit app color language.
+   Light mode is a fallback; the app defaults to dark. */
 :root {
-  --background: oklch(1 0 0);
+  --background: oklch(0.985 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: oklch(0.623 0.214 259.815);              /* blue-500 #3B82F6 */
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -63,58 +69,67 @@
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.637 0.237 25.331);           /* red-500 #EF4444 */
+  --success: oklch(0.696 0.17 162.48);                /* emerald-500 #10B981 */
+  --success-foreground: oklch(0.985 0 0);
+  --premium: oklch(0.627 0.265 303.9);                /* purple-500 #A855F7 */
+  --premium-foreground: oklch(0.985 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --ring: oklch(0.623 0.214 259.815);
+  --chart-1: oklch(0.623 0.214 259.815);              /* blue */
+  --chart-2: oklch(0.696 0.17 162.48);                /* emerald */
+  --chart-3: oklch(0.627 0.265 303.9);                /* purple */
+  --chart-4: oklch(0.769 0.188 70.08);                /* amber */
+  --chart-5: oklch(0.637 0.237 25.331);               /* red */
+  --radius: 0.75rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.623 0.214 259.815);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: oklch(0.623 0.214 259.815);
 }
 
+/* Dark theme = default. Slate-900 base, blue primary, purple premium accent. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.208 0.042 265.755);           /* slate-900 #0F172A */
+  --foreground: oklch(0.984 0.003 247.858);           /* slate-50  #F8FAFC */
+  --card: oklch(0.279 0.041 260.031);                 /* slate-800 #1E293B */
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --popover: oklch(0.279 0.041 260.031);
+  --popover-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.623 0.214 259.815);              /* blue-500 */
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.372 0.044 257.287);            /* slate-700 */
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.372 0.044 257.287);
+  --muted-foreground: oklch(0.704 0.04 256.788);      /* slate-400 */
+  --accent: oklch(0.372 0.044 257.287);
+  --accent-foreground: oklch(0.984 0.003 247.858);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --success: oklch(0.777 0.152 163.223);              /* emerald-400 tuned */
+  --success-foreground: oklch(0.145 0 0);
+  --premium: oklch(0.71 0.213 303.9);                 /* purple-400 */
+  --premium-foreground: oklch(0.984 0.003 247.858);
+  --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --ring: oklch(0.623 0.214 259.815);
+  --chart-1: oklch(0.623 0.214 259.815);
+  --chart-2: oklch(0.777 0.152 163.223);
+  --chart-3: oklch(0.71 0.213 303.9);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.704 0.191 22.216);
+  --sidebar: oklch(0.208 0.042 265.755);
+  --sidebar-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-primary: oklch(0.623 0.214 259.815);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.279 0.041 260.031);
+  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.623 0.214 259.815);
 }
 
 @layer base {
@@ -127,4 +142,30 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Reusable utilities that mirror Streamlit visuals */
+@layer utilities {
+  .aiql-gradient-text {
+    background: linear-gradient(135deg, #C4B5FD 0%, #93C5FD 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .aiql-premium-glow {
+    box-shadow:
+      0 0 0 1px rgba(168, 85, 247, 0.15),
+      0 4px 16px rgba(168, 85, 247, 0.18);
+  }
+  .aiql-premium-glow:hover {
+    box-shadow:
+      0 0 0 1px rgba(168, 85, 247, 0.30),
+      0 6px 22px rgba(168, 85, 247, 0.28);
+  }
+}
+
+/* Pulse animation for market status dot */
+@keyframes aiql-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
 }
