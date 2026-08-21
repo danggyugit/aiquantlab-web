@@ -58,7 +58,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Stock Research",
     items: [
       { href: "/stock", label: "종목 상세", icon: LineChart, wip: true },
-      { href: "/screener", label: "스크리너", icon: ScanSearch, wip: true },
+      { href: "/screener", label: "스크리너", icon: ScanSearch },
       { href: "/rs-screener", label: "RS 스크리너", icon: BarChart3, wip: true },
       { href: "/breakout-screener", label: "돌파 스크리너", icon: TrendingUp, wip: true },
       { href: "/compare", label: "종목 비교", icon: GitCompareArrows, wip: true },
@@ -69,9 +69,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Analysis Tools",
     items: [
       { href: "/ai-quant-lab", label: "AI Quant Lab", icon: Sparkles, premium: true, wip: true },
-      { href: "/factor-lab", label: "Factor Lab", icon: FlaskConical, wip: true },
+      { href: "/factor-lab", label: "Factor Lab", icon: FlaskConical },
       { href: "/stock-lab", label: "Stock Lab", icon: Beaker, external: true, wip: true },
-      { href: "/sec-intelligence", label: "SEC Intelligence", icon: Landmark, wip: true },
+      { href: "/sec-intelligence", label: "SEC Intelligence", icon: Landmark },
     ],
   },
   {
