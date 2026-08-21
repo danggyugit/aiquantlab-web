@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { BottomNav } from "@/components/bottom-nav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,7 +24,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="ko"
       className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/* Bottom nav is fixed on mobile; pad the bottom so scrollable content isn't hidden. */}
+      <body className="min-h-full flex flex-col pb-20 lg:pb-0">
+        {children}
+        <BottomNav />
+      </body>
     </html>
   );
 }
