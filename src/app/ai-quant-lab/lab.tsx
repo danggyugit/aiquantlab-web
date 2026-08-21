@@ -37,14 +37,22 @@ const CASH_STRATEGIES: { value: BacktestConfig["cash_strategy"]; label: string; 
 type Props = {
   presets: BacktestPreset[];
   presetLoadedInitial?: BacktestPreset;
+  apiUrl?: string;         // when set → real backtest execution via FastAPI
 };
 
-export function Lab({ presets, presetLoadedInitial }: Props) {
+type LoadedState = {
+  preset: BacktestPreset;
+  exact: boolean;
+  source: "preset" | "api";
+};
+
+export function Lab({ presets, presetLoadedInitial, apiUrl }: Props) {
   const [config, setConfig] = useState<BacktestConfig>(DEFAULT_CONFIG);
-  const [loaded, setLoaded] = useState<{ preset: BacktestPreset; exact: boolean } | null>(
-    presetLoadedInitial ? { preset: presetLoadedInitial, exact: true } : null,
+  const [loaded, setLoaded] = useState<LoadedState | null>(
+    presetLoadedInitial ? { preset: presetLoadedInitial, exact: true, source: "preset" } : null,
   );
   const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function toggleCapTier(t: string) {
     setConfig((c) => ({
@@ -59,11 +67,38 @@ export function Lab({ presets, presetLoadedInitial }: Props) {
     }));
   }
 
-  function handleRun() {
+  async function handleRun() {
     setIsRunning(true);
+    setError(null);
+
+    // If API URL is configured, run a real backtest on the FastAPI backend.
+    if (apiUrl) {
+      try {
+        const res = await fetch(`${apiUrl.replace(/\/$/, "")}/backtest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
+          // Cold-start requests can take 5-10 min while data is prefetched
+          signal: AbortSignal.timeout(15 * 60 * 1000),
+        });
+        if (!res.ok) {
+          throw new Error(`API returned ${res.status}: ${await res.text()}`);
+        }
+        const preset = (await res.json()) as BacktestPreset;
+        setLoaded({ preset, exact: true, source: "api" });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`백테스트 API 호출 실패: ${msg}`);
+      } finally {
+        setIsRunning(false);
+      }
+      return;
+    }
+
+    // Fallback: no backend configured → pick the closest precomputed preset.
     setTimeout(() => {
       const match = findClosestPreset(config, presets);
-      setLoaded({ preset: match.preset, exact: match.exact });
+      setLoaded({ preset: match.preset, exact: match.exact, source: "preset" });
       setIsRunning(false);
     }, 30);
   }
@@ -72,7 +107,7 @@ export function Lab({ presets, presetLoadedInitial }: Props) {
     const p = presets.find((x) => x.preset_id === id);
     if (!p) return;
     setConfig({ ...p.config });
-    setLoaded({ preset: p, exact: true });
+    setLoaded({ preset: p, exact: true, source: "preset" });
   }
 
   return (
@@ -304,18 +339,30 @@ export function Lab({ presets, presetLoadedInitial }: Props) {
               <Badge variant="secondary" className="text-[10px]">Cash: {config.cash_strategy}</Badge>
             </div>
             <Button onClick={handleRun} disabled={isRunning} className="gap-1.5">
-              {isRunning ? "계산 중..." : (
+              {isRunning ? (
+                <>{apiUrl ? "백테스트 실행 중... (최대 10분)" : "계산 중..."}</>
+              ) : (
                 <>
                   <Play className="h-4 w-4" /> 백테스트 실행
                 </>
               )}
             </Button>
           </div>
+          {error && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+              {error}
+            </div>
+          )}
+          {isRunning && apiUrl && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+              첫 요청은 yfinance·SEC 데이터 프리페치 때문에 5-10분 소요. 이후 요청은 캐시로 훨씬 빠릅니다.
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Results */}
-      {loaded && <ResultTabs preset={loaded.preset} exact={loaded.exact} />}
+      {loaded && <ResultTabs preset={loaded.preset} exact={loaded.exact} source={loaded.source} />}
     </div>
   );
 }

@@ -39,7 +39,11 @@ export default async function AiQuantLabPage() {
         </div>
       </div>
 
-      <Lab presets={presets} presetLoadedInitial={presets[0]} />
+      <Lab
+        presets={presets}
+        presetLoadedInitial={presets[0]}
+        apiUrl={process.env.NEXT_PUBLIC_API_URL}
+      />
     </div>
   );
 }

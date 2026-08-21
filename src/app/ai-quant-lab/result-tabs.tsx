@@ -12,13 +12,27 @@ import { ImportanceChart } from "./importance-chart";
 import { AlertCircle } from "lucide-react";
 
 // Mirrors Streamlit's 8-tab result panel (Summary / Live Picks / Performance / IC / History / Importance / Heatmap / Tracking).
-export function ResultTabs({ preset, exact }: { preset: BacktestPreset; exact: boolean }) {
+export function ResultTabs({
+  preset,
+  exact,
+  source = "preset",
+}: {
+  preset: BacktestPreset;
+  exact: boolean;
+  source?: "preset" | "api";
+}) {
   const s = preset.summary;
   const full = preset.full;
 
   return (
     <div className="flex flex-col gap-4">
-      {!exact && (
+      {source === "api" && (
+        <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-xs text-success">
+          <AlertCircle className="mr-1 inline h-3 w-3" />
+          <strong>실시간 백테스트 결과:</strong> 사용자 config로 FastAPI 백엔드가 방금 계산한 결과입니다.
+        </div>
+      )}
+      {source === "preset" && !exact && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100/90">
           <AlertCircle className="mr-1 inline h-3 w-3 text-amber-400" />
           <strong className="text-amber-400">가장 가까운 프리셋:</strong> "{preset.name}". 커스텀 config 실행은 Python 백엔드가 필요해서 (yfinance·SEC·ML 학습),
