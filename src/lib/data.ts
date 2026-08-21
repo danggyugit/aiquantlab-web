@@ -128,33 +128,137 @@ export type StockMeta = {
   cap_tier: string;
 };
 
-// Backtest preset (from data/cache/backtests/*.json)
-export type BacktestPick = {
+// Backtest preset (from data/cache/backtests/*.json).
+// Mirrors the Streamlit factor_backtest_service output verbatim.
+
+export type BacktestConfig = {
+  cap_tiers: string[];
+  sectors: string[];
+  rebal_m: number;              // rebalance months
+  rolling_w: number;            // rolling window months
+  n_stocks: number;
+  tc_pct: number;               // transaction cost %
+  min_dollar_vol: number;
+  use_next_open: boolean;
+  use_surv_fix: boolean;
+  use_ensemble: boolean;
+  use_mom_filter: boolean;
+  use_turnover_buffer: boolean;
+  start: string;                // ISO
+  end: string;                  // ISO
+  min_test: number;
+  use_inv_vol_weight: boolean;
+  use_momentum_weight: boolean;
+  cash_strategy: "none" | "vol_target" | "regime" | "combined";
+};
+
+export type BacktestSummary = {
+  n_rebalances?: number;
+  total_return_pct?: number;
+  cagr_pct?: number;
+  sharpe?: number;
+  sortino?: number;
+  max_dd_pct?: number;
+  monthly_win_rate_pct?: number;
+  volatility_pct?: number | null;
+  rebal_win_rate_pct?: number;
+  avg_period_return_pct?: number;
+  avg_excess_return_pct?: number;
+  profit_factor?: number;
+};
+
+// Today's/latest pick with weight and score
+export type TodayPick = {
   ticker: string;
   weight?: number;
-  score?: number;
+  composite_score?: number;
+  Mom_1m?: number;
+  Mom_3m?: number;
+  Mom_6m?: number;
+  Mom_12m?: number;
+  Volatility_30d?: number;
+};
+
+// Rebalancing event with selected stocks
+export type RebalanceEvent = {
+  rebalance_date: string;
+  next_date: string;
+  holding_period: string;
+  learn_start: string;
+  selected: string[];
+  ticker_df?: Array<{
+    ticker: string;
+    비중?: string;
+    예측수익률?: number;
+    실제수익률?: number;
+  }>;
+};
+
+// Cash ratio per rebalance date
+export type CashRecord = {
+  date: string;
+  cash_ratio: number;
+  regime?: string;
+  regime_probs?: unknown;
+  realized_vol?: number | null;
+};
+
+// IC (Information Coefficient) record per rebalance
+export type IcRecord = {
+  date: string;
+  IC?: number;
+  IC_RF?: number;
+  IC_XGB?: number;
+  IC_LGBM?: number;
+};
+
+// Feature importance per rebalance (dynamic keys per feature name)
+export type ImportanceRecord = Record<string, number | string>;
+
+// Latest full ranking entry
+export type RankingEntry = {
+  ticker: string;
+  composite_score?: number;
+  Mom_1m?: number;
+  Mom_3m?: number;
+  Mom_6m?: number;
+  Mom_12m?: number;
+  Volatility_30d?: number;
+};
+
+export type BacktestFull = {
+  port_dates: string[];         // equity curve dates
+  port_values: number[];        // equity curve values (starts at 1.0)
+  rebal_hist: RebalanceEvent[];
+  cash_history: CashRecord[];
+  ic_records: IcRecord[];
+  fimp_data: ImportanceRecord[];       // combined
+  fimp_rf_data: ImportanceRecord[];    // random forest
+  fimp_xgb_data: ImportanceRecord[];   // xgboost (may be empty)
+  fimp_lgbm_data: ImportanceRecord[];  // lightgbm (may be empty)
+  last_full_ranking: RankingEntry[];
+  use_ensemble: boolean;
+  rebal_m: number;
+  cash_strategy: string;
 };
 
 export type BacktestPreset = {
   preset_id: string;
   name: string;
   description: string;
-  config?: unknown;
-  summary: {
-    cagr_pct?: number;
-    sharpe?: number;
-    sortino?: number;
-    mdd_pct?: number;
-    calmar?: number;
-    win_rate_pct?: number;
-    turnover_pct?: number;
-    n_periods?: number;
-  };
+  config: BacktestConfig;
+  summary: BacktestSummary;
   last_rebalance_date?: string;
   last_regime?: string;
   last_cash_ratio_pct?: number;
-  latest_picks?: BacktestPick[];
-  today_picks?: BacktestPick[];
+  latest_picks?: TodayPick[];
+  today_picks?: TodayPick[];
+  today_full_ranking?: RankingEntry[];
+  today_picks_at?: string;
+  today_regime?: string | null;
+  today_cash_ratio_pct?: number | null;
+  full?: BacktestFull;
+  updated_at?: string;
 };
 
 export const BACKTEST_PRESET_IDS = [

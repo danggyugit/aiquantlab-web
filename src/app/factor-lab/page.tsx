@@ -71,7 +71,7 @@ function PresetCard({ preset }: { preset: BacktestPreset }) {
         <div className="grid grid-cols-4 gap-1.5">
           <MetricPill label="CAGR" value={s.cagr_pct} suffix="%" isGood={(v) => v > 10} />
           <MetricPill label="Sharpe" value={s.sharpe} digits={2} isGood={(v) => v > 1} />
-          <MetricPill label="MDD" value={s.mdd_pct} suffix="%" isGood={(v) => v > -20} />
+          <MetricPill label="MDD" value={s.max_dd_pct} suffix="%" isGood={(v) => v > -20} />
           <MetricPill label="Sortino" value={s.sortino} digits={2} isGood={(v) => v > 1} />
         </div>
 

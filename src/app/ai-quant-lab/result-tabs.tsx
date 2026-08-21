@@ -1,0 +1,471 @@
+"use client";
+
+import Link from "next/link";
+import type { BacktestPreset } from "@/lib/data";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { EquityCurve } from "./equity-curve";
+import { IcChart } from "./ic-chart";
+import { ImportanceChart } from "./importance-chart";
+import { AlertCircle } from "lucide-react";
+
+// Mirrors Streamlit's 8-tab result panel (Summary / Live Picks / Performance / IC / History / Importance / Heatmap / Tracking).
+export function ResultTabs({ preset, exact }: { preset: BacktestPreset; exact: boolean }) {
+  const s = preset.summary;
+  const full = preset.full;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {!exact && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100/90">
+          <AlertCircle className="mr-1 inline h-3 w-3 text-amber-400" />
+          <strong className="text-amber-400">가장 가까운 프리셋:</strong> "{preset.name}". 커스텀 config 실행은 Python 백엔드가 필요해서 (yfinance·SEC·ML 학습),
+          현재는 매일 미리 계산된 5개 프리셋 중 가장 유사한 것을 로드합니다.
+        </div>
+      )}
+
+      <Tabs defaultValue="summary" className="w-full">
+        <TabsList className="flex flex-wrap justify-start gap-1 bg-transparent p-0">
+          <TabsTrigger value="summary" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Summary</TabsTrigger>
+          <TabsTrigger value="live" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Live Picks</TabsTrigger>
+          <TabsTrigger value="perf" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Performance</TabsTrigger>
+          <TabsTrigger value="ic" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">IC</TabsTrigger>
+          <TabsTrigger value="history" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">History</TabsTrigger>
+          <TabsTrigger value="importance" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Importance</TabsTrigger>
+          <TabsTrigger value="heatmap" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Heatmap</TabsTrigger>
+          <TabsTrigger value="tracking" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Tracking</TabsTrigger>
+        </TabsList>
+
+        {/* --- Tab 1: Summary --- */}
+        <TabsContent value="summary" className="mt-4 flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Metric label="총 수익률" value={fmtPct(s.total_return_pct)} tone={pos(s.total_return_pct)} />
+            <Metric label="CAGR" value={fmtPct(s.cagr_pct)} tone={pos(s.cagr_pct)} />
+            <Metric label="Sharpe" value={s.sharpe?.toFixed(2)} tone={s.sharpe && s.sharpe > 1 ? "success" : "neutral"} />
+            <Metric label="Sortino" value={s.sortino?.toFixed(2)} tone={s.sortino && s.sortino > 1 ? "success" : "neutral"} />
+            <Metric label="MDD" value={fmtPct(s.max_dd_pct)} tone={s.max_dd_pct && s.max_dd_pct > -20 ? "success" : "danger"} />
+            <Metric label="월간 승률" value={fmtPct(s.monthly_win_rate_pct)} tone={s.monthly_win_rate_pct && s.monthly_win_rate_pct > 50 ? "success" : "neutral"} />
+          </div>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">누적 수익률 (Equity Curve)</CardTitle>
+              <CardDescription className="text-xs">초기 자본 1.0 기준 · 리밸런싱 {s.n_rebalances}회</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {full ? <EquityCurve dates={full.port_dates} values={full.port_values} /> : <NoData />}
+            </CardContent>
+          </Card>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Metric label="Profit Factor" value={s.profit_factor?.toFixed(2)} tone={s.profit_factor && s.profit_factor > 1.5 ? "success" : "neutral"} />
+            <Metric label="리밸런싱 승률" value={fmtPct(s.rebal_win_rate_pct)} tone="neutral" />
+            <Metric label="평균 초과수익" value={fmtPct(s.avg_excess_return_pct)} tone={pos(s.avg_excess_return_pct)} />
+          </div>
+        </TabsContent>
+
+        {/* --- Tab 2: Live Picks --- */}
+        <TabsContent value="live" className="mt-4 flex flex-col gap-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">오늘의 추천 종목</CardTitle>
+                {preset.today_picks_at && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {preset.today_picks_at.slice(0, 10)}
+                  </Badge>
+                )}
+                {preset.today_regime && (
+                  <Badge variant="secondary" className="bg-primary/15 text-primary text-[10px]">
+                    Regime: {preset.today_regime}
+                  </Badge>
+                )}
+              </div>
+              <CardDescription className="text-xs">
+                {preset.today_cash_ratio_pct !== undefined && preset.today_cash_ratio_pct !== null
+                  ? `현금 비중 ${preset.today_cash_ratio_pct}%`
+                  : "현금 없음"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PicksTable picks={preset.today_picks ?? []} />
+            </CardContent>
+          </Card>
+          {preset.today_full_ranking && preset.today_full_ranking.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">전체 랭킹 <span className="text-xs font-normal text-muted-foreground">({preset.today_full_ranking.length})</span></CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RankingTable rows={preset.today_full_ranking.slice(0, 30)} />
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* --- Tab 3: Performance --- */}
+        <TabsContent value="perf" className="mt-4 flex flex-col gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">누적 수익률</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {full ? <EquityCurve dates={full.port_dates} values={full.port_values} /> : <NoData />}
+            </CardContent>
+          </Card>
+          {full && <MonthlyReturnsCard dates={full.port_dates} values={full.port_values} />}
+        </TabsContent>
+
+        {/* --- Tab 4: IC --- */}
+        <TabsContent value="ic" className="mt-4 flex flex-col gap-4">
+          {full && full.ic_records.length > 0 ? (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <Metric label="IC 평균" value={computeIcMean(full.ic_records).toFixed(4)} tone="neutral" />
+                <Metric label="IC 표준편차" value={computeIcStd(full.ic_records).toFixed(4)} tone="neutral" />
+                <Metric label="양성 비율" value={fmtPct(computeIcPositiveRate(full.ic_records))} tone={computeIcPositiveRate(full.ic_records) > 50 ? "success" : "neutral"} />
+              </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">IC 시계열</CardTitle>
+                  <CardDescription className="text-xs">각 리밸런싱 시점의 예측력 지표 (양의 값 = 예측 방향 일치)</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <IcChart records={full.ic_records} />
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <NoData label="IC 기록 없음" />
+          )}
+        </TabsContent>
+
+        {/* --- Tab 5: History --- */}
+        <TabsContent value="history" className="mt-4">
+          {full && full.rebal_hist.length > 0 ? (
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">리밸런싱 이력 ({full.rebal_hist.length}회)</CardTitle>
+              </CardHeader>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="border-b border-border/60 bg-muted/20 text-left text-[10px] text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2">리밸런싱일</th>
+                      <th className="px-3 py-2">보유 기간</th>
+                      <th className="px-3 py-2">선정 종목</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {full.rebal_hist.slice().reverse().map((r, i) => (
+                      <tr key={i} className="border-b border-border/30">
+                        <td className="px-3 py-2 text-muted-foreground">{r.rebalance_date.slice(0, 10)}</td>
+                        <td className="px-3 py-2 text-[10px] text-muted-foreground">{r.holding_period}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {r.selected.map((t) => (
+                              <Link
+                                key={t}
+                                href={`/stock/${t}`}
+                                className="rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary hover:bg-primary/20"
+                              >
+                                {t}
+                              </Link>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ) : (
+            <NoData label="리밸런싱 이력 없음" />
+          )}
+        </TabsContent>
+
+        {/* --- Tab 6: Importance --- */}
+        <TabsContent value="importance" className="mt-4">
+          {full && full.fimp_data.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">특성 중요도 (평균 · Top 15)</CardTitle>
+                <CardDescription className="text-xs">
+                  모든 리밸런싱 시점의 특성 중요도 평균값. 상위 15개.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ImportanceChart records={full.fimp_data} />
+              </CardContent>
+            </Card>
+          ) : (
+            <NoData label="특성 중요도 데이터 없음" />
+          )}
+        </TabsContent>
+
+        {/* --- Tab 7: Heatmap --- */}
+        <TabsContent value="heatmap" className="mt-4">
+          {full && full.fimp_data.length > 0 ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">특성 중요도 히트맵 (시간 축)</CardTitle>
+                <CardDescription className="text-xs">
+                  X축: 리밸런싱 시점 · Y축: 상위 특성 · 색상 강도: 중요도
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <HeatmapGrid records={full.fimp_data} />
+              </CardContent>
+            </Card>
+          ) : (
+            <NoData label="히트맵 데이터 없음" />
+          )}
+        </TabsContent>
+
+        {/* --- Tab 8: Tracking --- */}
+        <TabsContent value="tracking" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">벤치마크 추적</CardTitle>
+              <CardDescription className="text-xs">
+                평균 초과수익 {fmtPct(s.avg_excess_return_pct)} · 리밸런싱당 평균 수익 {fmtPct(s.avg_period_return_pct)}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {full ? <EquityCurve dates={full.port_dates} values={full.port_values} /> : <NoData />}
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                SPY·QQQ 오버레이는 벤치마크 히스토리 캐시 확장 후 추가 예정.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ---------- Sub-components ----------
+
+function Metric({
+  label,
+  value,
+  tone,
+}: { label: string; value: string | number | undefined; tone: "success" | "danger" | "neutral" }) {
+  const color =
+    tone === "success" ? "text-success" : tone === "danger" ? "text-destructive" : "text-foreground";
+  return (
+    <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={cn("mt-0.5 text-xl font-bold tabular-nums", color)}>{value ?? "-"}</div>
+    </div>
+  );
+}
+
+function NoData({ label = "데이터 없음" }: { label?: string }) {
+  return (
+    <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">{label}</div>
+  );
+}
+
+function PicksTable({ picks }: { picks: import("@/lib/data").TodayPick[] }) {
+  if (picks.length === 0) return <NoData label="추천 종목 없음" />;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">Ticker</th>
+            <th className="px-3 py-2 text-right">비중</th>
+            <th className="px-3 py-2 text-right">종합 스코어</th>
+            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 1M</th>
+            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 12M</th>
+            <th className="px-3 py-2 text-right hidden sm:table-cell">30일 변동성</th>
+          </tr>
+        </thead>
+        <tbody>
+          {picks.map((p) => (
+            <tr key={p.ticker} className="border-b border-border/30">
+              <td className="px-3 py-2 font-mono text-xs font-semibold">
+                <Link href={`/stock/${p.ticker}`} className="text-primary hover:underline">
+                  {p.ticker}
+                </Link>
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {p.weight !== undefined ? `${(p.weight * 100).toFixed(2)}%` : "-"}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {p.composite_score !== undefined ? p.composite_score.toFixed(4) : "-"}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                {p.Mom_1m !== undefined ? fmtPct(p.Mom_1m * 100) : "-"}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                {p.Mom_12m !== undefined ? fmtPct(p.Mom_12m * 100) : "-"}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                {p.Volatility_30d !== undefined ? `${(p.Volatility_30d * 100).toFixed(1)}%` : "-"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RankingTable({ rows }: { rows: import("@/lib/data").RankingEntry[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">#</th>
+            <th className="px-3 py-2">Ticker</th>
+            <th className="px-3 py-2 text-right">종합 스코어</th>
+            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 12M</th>
+            <th className="px-3 py-2 text-right hidden sm:table-cell">30일 변동성</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.ticker} className="border-b border-border/30">
+              <td className="px-3 py-2 text-xs text-muted-foreground">{i + 1}</td>
+              <td className="px-3 py-2 font-mono text-xs font-semibold">
+                <Link href={`/stock/${r.ticker}`} className="text-primary hover:underline">{r.ticker}</Link>
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {r.composite_score !== undefined ? r.composite_score.toFixed(4) : "-"}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                {r.Mom_12m !== undefined ? fmtPct(r.Mom_12m * 100) : "-"}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                {r.Volatility_30d !== undefined ? `${(r.Volatility_30d * 100).toFixed(1)}%` : "-"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MonthlyReturnsCard({ dates, values }: { dates: string[]; values: number[] }) {
+  // Compute monthly returns from equity curve.
+  const monthly: Array<{ month: string; ret: number }> = [];
+  for (let i = 1; i < dates.length; i++) {
+    const ret = (values[i] / values[i - 1] - 1) * 100;
+    monthly.push({ month: dates[i].slice(0, 7), ret });
+  }
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">월별 수익률</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-1">
+          {monthly.slice().reverse().map((m) => (
+            <div
+              key={m.month}
+              className={cn(
+                "min-w-[80px] rounded-md border px-2 py-1.5 text-center text-xs",
+                m.ret >= 0
+                  ? "border-success/30 bg-success/10 text-success"
+                  : "border-destructive/30 bg-destructive/10 text-destructive",
+              )}
+            >
+              <div className="text-[10px] text-muted-foreground">{m.month}</div>
+              <div className="font-semibold tabular-nums">
+                {m.ret >= 0 ? "+" : ""}{m.ret.toFixed(1)}%
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function HeatmapGrid({ records }: { records: import("@/lib/data").ImportanceRecord[] }) {
+  // Top-8 features by mean importance
+  const sums = new Map<string, number>();
+  for (const r of records) {
+    for (const [k, v] of Object.entries(r)) {
+      if (k === "date" || typeof v !== "number") continue;
+      sums.set(k, (sums.get(k) ?? 0) + v);
+    }
+  }
+  const topFeatures = Array.from(sums.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map((x) => x[0]);
+  const maxImp = Math.max(
+    ...records.flatMap((r) => topFeatures.map((f) => (typeof r[f] === "number" ? (r[f] as number) : 0))),
+  );
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-[10px]">
+        <thead>
+          <tr>
+            <th className="p-1 text-left text-muted-foreground">Feature \ Rebal</th>
+            {records.map((r) => (
+              <th key={r.date as string} className="p-0.5 text-muted-foreground">
+                {(r.date as string).slice(2, 7)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {topFeatures.map((f) => (
+            <tr key={f}>
+              <td className="p-1 pr-2 font-mono text-muted-foreground">{f}</td>
+              {records.map((r) => {
+                const v = typeof r[f] === "number" ? (r[f] as number) : 0;
+                const t = maxImp > 0 ? v / maxImp : 0;
+                const alpha = 0.1 + t * 0.85;
+                return (
+                  <td key={r.date as string} className="p-0.5">
+                    <div
+                      title={`${f} @ ${(r.date as string).slice(0, 10)}: ${v.toFixed(4)}`}
+                      className="h-4 w-4 rounded-sm"
+                      style={{ backgroundColor: `rgba(168, 85, 247, ${alpha.toFixed(2)})` }}
+                    />
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------- Helpers ----------
+
+function fmtPct(v: number | undefined | null): string {
+  if (v === undefined || v === null) return "-";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+function pos(v: number | undefined | null): "success" | "danger" | "neutral" {
+  if (v === undefined || v === null) return "neutral";
+  return v >= 0 ? "success" : "danger";
+}
+
+function computeIcMean(records: import("@/lib/data").IcRecord[]): number {
+  const vals = records.map((r) => r.IC ?? r.IC_RF ?? 0);
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function computeIcStd(records: import("@/lib/data").IcRecord[]): number {
+  const vals = records.map((r) => r.IC ?? r.IC_RF ?? 0);
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+  return Math.sqrt(variance);
+}
+
+function computeIcPositiveRate(records: import("@/lib/data").IcRecord[]): number {
+  const vals = records.map((r) => r.IC ?? r.IC_RF ?? 0);
+  const positives = vals.filter((v) => v > 0).length;
+  return (positives / vals.length) * 100;
+}
