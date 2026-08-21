@@ -1,20 +1,35 @@
-import { PageStub } from "@/components/page-stub";
+import { getHeatmap } from "@/lib/data";
+import { MarketBadge } from "@/components/market-badge";
+import { CompareClient, type CompareTickerData } from "./compare-client";
 
 export const metadata = { title: "종목 비교 · AI Quant Lab" };
+export const revalidate = 900;
 
-export default function ComparePage() {
+export default async function ComparePage() {
+  const heatmap = await getHeatmap();
+
+  const data: CompareTickerData[] = Object.entries(heatmap.tickers)
+    .filter(([, d]) => d.prices && d.prices.length > 0)
+    .map(([ticker, d]) => ({
+      ticker,
+      name: d.name,
+      sector: d.sector,
+      prices: d.prices.map((p) => ({ date: p.date.slice(5), close: p.close })),
+    }));
+
   return (
-    <PageStub
-      title="종목 비교"
-      description="2~5개 종목 성과·펀더멘털 다각도 비교"
-      features={[
-        "정규화 수익률 선차트 (동일 시점 100으로 스케일링)",
-        "펀더멘털 바차트: PER·PBR·ROE·매출성장률",
-        "레이더 차트: 종합 스코어 비교",
-        "가격 상관계수 매트릭스",
-        "리스크 조정 수익률 (Sharpe·Sortino·MDD)",
-      ]}
-      streamlitUrl="https://aiquantlab.streamlit.app"
-    />
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
+      <header className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">종목 비교</h1>
+          <MarketBadge />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          최대 5개 종목 성과 정규화 비교 · 첫 거래일=100 기준
+        </p>
+      </header>
+
+      <CompareClient allTickers={data} />
+    </div>
   );
 }

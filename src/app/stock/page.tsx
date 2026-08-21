@@ -1,20 +1,32 @@
-import { PageStub } from "@/components/page-stub";
+import { getStocksMeta } from "@/lib/data";
+import { MarketBadge } from "@/components/market-badge";
+import { StockSearchClient } from "./search-client";
 
 export const metadata = { title: "종목 상세 · AI Quant Lab" };
+export const revalidate = 900;
 
-export default function StockPage() {
+export default async function StockIndexPage() {
+  const stocks = await getStocksMeta();
+
+  const compact = stocks.map((s) => ({
+    ticker: s.ticker,
+    name: s.name,
+    sector: s.sector,
+  }));
+
   return (
-    <PageStub
-      title="종목 상세"
-      description="개별 종목 심층 분석 (가격·재무·밸류·뉴스·인사이더)"
-      features={[
-        "가격 차트: 캔들 + RSI/MACD/볼린저 밴드",
-        "재무제표: 손익·재무상태·현금흐름 (5년)",
-        "밸류에이션: PE/PB/DCF 멀티모델 공정가치 계산",
-        "애널리스트 컨센서스: 목표가·매수/매도 등급 분포",
-        "뉴스 피드 + 인사이더 거래 이력",
-      ]}
-      streamlitUrl="https://aiquantlab.streamlit.app"
-    />
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6">
+      <header className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">종목 상세</h1>
+          <MarketBadge />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          S&amp;P500 종목 검색 → 클릭 시 상세 페이지로 이동
+        </p>
+      </header>
+
+      <StockSearchClient stocks={compact} />
+    </div>
   );
 }

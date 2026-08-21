@@ -254,8 +254,29 @@ export function latestQuote(t: HeatmapTicker): { price: number; changePct: numbe
   return { price: last.close, changePct };
 }
 
-/** Format a large number as USD with abbreviated suffix. */
-export function fmtMarketCap(n: number): string {
+/**
+ * Period-return % between the first and last close in the ticker's price series.
+ * Note: current cache only stores ~5 recent trading days, so this represents
+ * short-term (weekly) momentum, NOT the standard 12M IBD RS Rating.
+ */
+export function periodReturn(t: HeatmapTicker): number | null {
+  const p = t.prices;
+  if (!p || p.length < 2) return null;
+  const first = p[0];
+  const last = p[p.length - 1];
+  if (!first?.close) return null;
+  return ((last.close - first.close) / first.close) * 100;
+}
+
+/** Distance from the 52-week high as a % of the high (0 = at high, -20 = 20% below). */
+export function distanceFromHigh(current: number, fiftyTwoWkHigh: number | null): number | null {
+  if (!fiftyTwoWkHigh || fiftyTwoWkHigh <= 0) return null;
+  return ((current - fiftyTwoWkHigh) / fiftyTwoWkHigh) * 100;
+}
+
+/** Format a large number as USD with abbreviated suffix. Returns "-" for null/0. */
+export function fmtMarketCap(n: number | null | undefined): string {
+  if (n === null || n === undefined || n === 0) return "-";
   if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
   if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
