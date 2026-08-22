@@ -38,6 +38,13 @@ type Props = {
   presets: BacktestPreset[];
   presetLoadedInitial?: BacktestPreset;
   apiUrl?: string;         // when set → real backtest execution via FastAPI
+  /**
+   * If true, hide the strategy config form entirely — preset-loader-only mode.
+   * Used on /backtest's AI 앙상블 tab because Render Free's 10-min HTTP
+   * timeout means custom-config execution isn't possible there; showing the
+   * form would misleadingly imply that it is.
+   */
+  hideConfig?: boolean;
 };
 
 type LoadedState = {
@@ -46,7 +53,7 @@ type LoadedState = {
   source: "preset" | "api";
 };
 
-export function Lab({ presets, presetLoadedInitial, apiUrl }: Props) {
+export function Lab({ presets, presetLoadedInitial, apiUrl, hideConfig }: Props) {
   const [config, setConfig] = useState<BacktestConfig>(DEFAULT_CONFIG);
   const [loaded, setLoaded] = useState<LoadedState | null>(
     presetLoadedInitial ? { preset: presetLoadedInitial, exact: true, source: "preset" } : null,
@@ -115,7 +122,8 @@ export function Lab({ presets, presetLoadedInitial, apiUrl }: Props) {
       {/* Preset loader — 50 presets grouped by sector */}
       <PresetLoader presets={presets} onLoad={handleLoadPreset} />
 
-      {/* Config form */}
+      {/* Config form (hidden when hideConfig=true — see Props.hideConfig) */}
+      {!hideConfig && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">전략 설정</CardTitle>
@@ -327,6 +335,7 @@ export function Lab({ presets, presetLoadedInitial, apiUrl }: Props) {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Results */}
       {loaded && <ResultTabs preset={loaded.preset} exact={loaded.exact} source={loaded.source} />}

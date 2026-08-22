@@ -71,6 +71,33 @@ export function ResultTabs({
               {full ? <EquityCurve dates={full.port_dates} values={full.port_values} /> : <NoData />}
             </CardContent>
           </Card>
+
+          {preset.today_full_ranking && preset.today_full_ranking.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Live Picks 전체 랭킹 · Top 10</CardTitle>
+                  {preset.today_picks_at && (
+                    <Badge variant="secondary" className="text-[10px]">
+                      {preset.today_picks_at.slice(0, 10)}
+                    </Badge>
+                  )}
+                </div>
+                <CardDescription className="text-xs">
+                  ML 모델이 예측한 오늘의 전체 유니버스 랭킹 (총 {preset.today_full_ranking.length}종목).
+                  전체 리스트는 Live Picks 탭에서 확인.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RankingTable
+                  rows={preset.today_full_ranking.slice(0, 10)}
+                  totalRanked={preset.today_full_ranking.length}
+                  isEnsemble={full?.use_ensemble ?? false}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-3">
             <Metric label="Profit Factor" value={s.profit_factor?.toFixed(2)} tone={s.profit_factor && s.profit_factor > 1.5 ? "success" : "neutral"} />
             <Metric label="리밸런싱 승률" value={fmtPct(s.rebal_win_rate_pct)} tone="neutral" />
@@ -102,7 +129,7 @@ export function ResultTabs({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <PicksTable picks={preset.today_picks ?? []} />
+              <PicksTable picks={preset.today_picks ?? []} isEnsemble={full?.use_ensemble ?? false} />
             </CardContent>
           </Card>
           {preset.today_full_ranking && preset.today_full_ranking.length > 0 && (
@@ -111,7 +138,11 @@ export function ResultTabs({
                 <CardTitle className="text-base">전체 랭킹 <span className="text-xs font-normal text-muted-foreground">({preset.today_full_ranking.length})</span></CardTitle>
               </CardHeader>
               <CardContent>
-                <RankingTable rows={preset.today_full_ranking.slice(0, 30)} />
+                <RankingTable
+                  rows={preset.today_full_ranking.slice(0, 30)}
+                  totalRanked={preset.today_full_ranking.length}
+                  isEnsemble={full?.use_ensemble ?? false}
+                />
               </CardContent>
             </Card>
           )}
@@ -282,8 +313,59 @@ function NoData({ label = "데이터 없음" }: { label?: string }) {
   );
 }
 
-function PicksTable({ picks }: { picks: import("@/lib/data").TodayPick[] }) {
+/**
+ * composite_score의 두 얼굴:
+ *  - 앙상블 모드: `-((RF+XGB+LGBM 순위) / 3)` — 음수 정수, 절댓값이 순위(작을수록 좋음)
+ *  - 비앙상블: `RF 모델의 예측 수익률` — 소수 (0.19 = 19%)
+ * UI에서 하나의 컬럼으로 표시하면 오해가 발생하므로 스마트하게 분기.
+ */
+function formatScore(score: number | undefined, isEnsemble: boolean, total: number): string {
+  if (score === undefined || score === null || Number.isNaN(score)) return "-";
+  if (isEnsemble) {
+    // Absolute value = average rank (1 = best). Display as "avg rank / total".
+    const avgRank = Math.abs(score);
+    return `${avgRank.toFixed(1)} / ${total}`;
+  }
+  // Non-ensemble: raw predicted return (0.19 → +19.0%)
+  const pct = score * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+}
+
+function scoreLabel(isEnsemble: boolean): string {
+  return isEnsemble ? "모델 순위 (평균)" : "예측 수익률";
+}
+
+function scoreTone(score: number | undefined, isEnsemble: boolean, total: number): "success" | "danger" | "neutral" {
+  if (score === undefined || score === null) return "neutral";
+  if (isEnsemble) {
+    // Top 20% of ranks = success
+    const avgRank = Math.abs(score);
+    if (avgRank <= total * 0.2) return "success";
+    if (avgRank >= total * 0.8) return "danger";
+    return "neutral";
+  }
+  return score >= 0 ? "success" : "danger";
+}
+
+// Format momentum feature value (raw factor space — may be extreme due to
+// winsorization at ~7 for 12M returns, or normalized elsewhere).
+function fmtMom(v: number | undefined): string {
+  if (v === undefined || v === null || Number.isNaN(v)) return "-";
+  const pct = v * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
+function fmtVol(v: number | undefined): string {
+  if (v === undefined || v === null || Number.isNaN(v)) return "-";
+  return `${(v * 100).toFixed(0)}%`;
+}
+
+function PicksTable({
+  picks,
+  isEnsemble,
+}: { picks: import("@/lib/data").TodayPick[]; isEnsemble: boolean }) {
   if (picks.length === 0) return <NoData label="추천 종목 없음" />;
+  const total = picks.length; // for weight column context (picks are the selected N)
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -291,74 +373,84 @@ function PicksTable({ picks }: { picks: import("@/lib/data").TodayPick[] }) {
           <tr>
             <th className="px-3 py-2">Ticker</th>
             <th className="px-3 py-2 text-right">비중</th>
-            <th className="px-3 py-2 text-right">종합 스코어</th>
-            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 1M</th>
+            <th className="px-3 py-2 text-right">{scoreLabel(isEnsemble)}</th>
+            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 3M</th>
             <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 12M</th>
-            <th className="px-3 py-2 text-right hidden sm:table-cell">30일 변동성</th>
+            <th className="px-3 py-2 text-right hidden md:table-cell">30d 변동성</th>
           </tr>
         </thead>
         <tbody>
-          {picks.map((p) => (
-            <tr key={p.ticker} className="border-b border-border/30">
-              <td className="px-3 py-2 font-mono text-xs font-semibold">
-                <Link href={`/stock/${p.ticker}`} className="text-primary hover:underline">
-                  {p.ticker}
-                </Link>
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {p.weight !== undefined ? `${(p.weight * 100).toFixed(2)}%` : "-"}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {p.composite_score !== undefined ? p.composite_score.toFixed(4) : "-"}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
-                {p.Mom_1m !== undefined ? fmtPct(p.Mom_1m * 100) : "-"}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
-                {p.Mom_12m !== undefined ? fmtPct(p.Mom_12m * 100) : "-"}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
-                {p.Volatility_30d !== undefined ? `${(p.Volatility_30d * 100).toFixed(1)}%` : "-"}
-              </td>
-            </tr>
-          ))}
+          {picks.map((p) => {
+            const tone = scoreTone(p.composite_score, isEnsemble, total);
+            const scoreColor = tone === "success" ? "text-success" : tone === "danger" ? "text-destructive" : "text-foreground";
+            return (
+              <tr key={p.ticker} className="border-b border-border/30">
+                <td className="px-3 py-2 font-mono text-xs font-semibold">
+                  <Link href={`/stock/${p.ticker}`} className="text-primary hover:underline">{p.ticker}</Link>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {p.weight !== undefined ? `${(p.weight * 100).toFixed(1)}%` : "-"}
+                </td>
+                <td className={cn("px-3 py-2 text-right tabular-nums font-semibold", scoreColor)}>
+                  {formatScore(p.composite_score, isEnsemble, total)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(p.Mom_3m)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(p.Mom_12m)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">{fmtVol(p.Volatility_30d)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-function RankingTable({ rows }: { rows: import("@/lib/data").RankingEntry[] }) {
+function RankingTable({
+  rows,
+  totalRanked,
+  isEnsemble,
+}: {
+  rows: import("@/lib/data").RankingEntry[];
+  totalRanked: number;
+  isEnsemble: boolean;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
           <tr>
-            <th className="px-3 py-2">#</th>
+            <th className="px-3 py-2 w-10">#</th>
             <th className="px-3 py-2">Ticker</th>
-            <th className="px-3 py-2 text-right">종합 스코어</th>
+            <th className="px-3 py-2 text-right">{scoreLabel(isEnsemble)}</th>
+            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 3M</th>
             <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 12M</th>
-            <th className="px-3 py-2 text-right hidden sm:table-cell">30일 변동성</th>
+            <th className="px-3 py-2 text-right hidden md:table-cell">30d 변동성</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.ticker} className="border-b border-border/30">
-              <td className="px-3 py-2 text-xs text-muted-foreground">{i + 1}</td>
-              <td className="px-3 py-2 font-mono text-xs font-semibold">
-                <Link href={`/stock/${r.ticker}`} className="text-primary hover:underline">{r.ticker}</Link>
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {r.composite_score !== undefined ? r.composite_score.toFixed(4) : "-"}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
-                {r.Mom_12m !== undefined ? fmtPct(r.Mom_12m * 100) : "-"}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
-                {r.Volatility_30d !== undefined ? `${(r.Volatility_30d * 100).toFixed(1)}%` : "-"}
-              </td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const tone = scoreTone(r.composite_score, isEnsemble, totalRanked);
+            const scoreColor = tone === "success" ? "text-success" : tone === "danger" ? "text-destructive" : "text-foreground";
+            const rank = i + 1;
+            const isTop3 = rank <= 3;
+            return (
+              <tr key={r.ticker} className="border-b border-border/30">
+                <td className={cn("px-3 py-2 text-xs tabular-nums", isTop3 ? "font-bold text-primary" : "text-muted-foreground")}>
+                  {rank}
+                </td>
+                <td className="px-3 py-2 font-mono text-xs font-semibold">
+                  <Link href={`/stock/${r.ticker}`} className="text-primary hover:underline">{r.ticker}</Link>
+                </td>
+                <td className={cn("px-3 py-2 text-right tabular-nums font-semibold", scoreColor)}>
+                  {formatScore(r.composite_score, isEnsemble, totalRanked)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(r.Mom_3m)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(r.Mom_12m)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">{fmtVol(r.Volatility_30d)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

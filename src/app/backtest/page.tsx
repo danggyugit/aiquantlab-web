@@ -63,7 +63,7 @@ export default async function BacktestPage() {
         </TabsContent>
 
         <TabsContent value="ml" className="mt-4">
-          <Lab presets={presets} presetLoadedInitial={presets[0]} />
+          <Lab presets={presets} presetLoadedInitial={presets[0]} hideConfig />
         </TabsContent>
       </Tabs>
     </div>
