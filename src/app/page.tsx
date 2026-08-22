@@ -154,7 +154,7 @@ export default async function Home() {
             상세 보기 <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
-        <FinvizHeatmap data={heatmapNodes} height={520} />
+        <FinvizHeatmap data={heatmapNodes} height={720} />
         <p className="mt-2 text-[10px] text-muted-foreground">
           섹터별 그룹 · 박스 크기 = 시가총액 · 색상 = 전일 대비 · 상위 200 종목 · 클릭 시 상세 이동
         </p>

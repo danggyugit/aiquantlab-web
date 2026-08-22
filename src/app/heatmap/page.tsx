@@ -41,11 +41,11 @@ export default async function HeatmapPage() {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // Section 3: Finviz-style heatmap (top-300 by market cap for the standalone page)
+  // Section 3: Finviz-style heatmap (top-500 by market cap for the standalone page)
   const nodes: FinvizTicker[] = [...enriched]
     .filter((e) => e.sector && e.marketCap > 0)
     .sort((a, b) => b.marketCap - a.marketCap)
-    .slice(0, 300)
+    .slice(0, 500)
     .map((e) => ({
       ticker: e.ticker,
       sector: e.sector,
@@ -85,7 +85,7 @@ export default async function HeatmapPage() {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-6 sm:px-6">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">히트맵</h1>
@@ -147,7 +147,7 @@ export default async function HeatmapPage() {
       {/* ═══ 4. Finviz-style Heatmap ═══ */}
       <section>
         <h2 className="mb-3 text-lg font-semibold">Market Heatmap</h2>
-        <FinvizHeatmap data={nodes} height={720} />
+        <FinvizHeatmap data={nodes} height={900} />
         <p className="mt-2 text-[10px] text-muted-foreground">
           섹터별 그룹 · 박스 크기 = 시가총액 · 색상 = 전일 대비 등락 · 상위 300 종목 · 클릭 시 상세 이동
         </p>
