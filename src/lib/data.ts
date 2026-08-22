@@ -364,6 +364,110 @@ export function getSec13FMetadata(): Promise<Sec13FMetadata> {
   return fetchCache<Sec13FMetadata>("sec/_metadata.json");
 }
 
+// ───────── Macro (FRED time series, cached daily) ─────────
+
+export type MacroPoint = { date: string; value: number };
+export type MacroSeries = { series_id: string; freq: "D" | "W" | "M"; data: MacroPoint[] };
+
+/** Fetches one macro series from the FRED-mirrored cache. */
+export function getMacroSeries(slug: string): Promise<MacroSeries> {
+  return fetchCache<MacroSeries>(`macro/${slug}.json`);
+}
+
+// Slugs mirror stock-dashboard/streamlit_app/scripts/cache_macro_data.py:SERIES.
+export const MACRO_SLUGS = [
+  "walcl", "rrp", "tga", "reserves", "hy_oas",
+  "m1", "m2", "fed_funds", "dgs2", "dgs10",
+  "cpi", "core_pce", "dxy", "wti",
+  // "gold" temporarily excluded — FRED series ID needs migration
+] as const;
+
+/** Fetch all macro series in parallel; tolerant of missing/failed files. */
+export async function getAllMacroSeries(): Promise<Record<string, MacroSeries | null>> {
+  const entries = await Promise.all(
+    MACRO_SLUGS.map(async (slug) => {
+      try {
+        return [slug, await getMacroSeries(slug)] as const;
+      } catch {
+        return [slug, null] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
+// ───────── Macro helpers (computed on top of cached data) ─────────
+
+/** Net Liquidity = Fed Balance Sheet - RRP - TGA. Aligns on WALCL's weekly index. */
+export function computeNetLiquidity(
+  walcl: MacroSeries | null,
+  rrp: MacroSeries | null,
+  tga: MacroSeries | null,
+): MacroPoint[] {
+  if (!walcl?.data?.length) return [];
+  // RRP is in $ billions, TGA + WALCL in $ millions. Convert RRP to millions.
+  const rrpByDate = new Map((rrp?.data ?? []).map((p) => [p.date, p.value * 1000]));
+  const tgaByDate = new Map((tga?.data ?? []).map((p) => [p.date, p.value]));
+
+  // For each WALCL point (weekly), find the closest prior RRP/TGA values.
+  const rrpSorted = [...(rrp?.data ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+  const tgaSorted = [...(tga?.data ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+
+  return walcl.data.map((w) => {
+    const rrpVal = rrpByDate.get(w.date) ?? findClosestValue(rrpSorted, w.date) * 1000;
+    const tgaVal = tgaByDate.get(w.date) ?? findClosestValue(tgaSorted, w.date);
+    return { date: w.date, value: w.value - rrpVal - tgaVal };
+  });
+}
+
+function findClosestValue(sorted: MacroPoint[], target: string): number {
+  if (sorted.length === 0) return 0;
+  let lo = 0;
+  let hi = sorted.length - 1;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi + 1) / 2);
+    if (sorted[mid].date <= target) lo = mid;
+    else hi = mid - 1;
+  }
+  return sorted[lo].value;
+}
+
+/** YoY % for monthly index series (CPI, PCE). Returns points where 12M prior exists. */
+export function computeYoY(series: MacroSeries | null): MacroPoint[] {
+  if (!series?.data?.length) return [];
+  const data = series.data;
+  const out: MacroPoint[] = [];
+  for (let i = 12; i < data.length; i++) {
+    const prev = data[i - 12].value;
+    if (prev === 0) continue;
+    out.push({
+      date: data[i].date,
+      value: ((data[i].value - prev) / prev) * 100,
+    });
+  }
+  return out;
+}
+
+/** Latest value or null if empty. */
+export function latestPoint(series: MacroSeries | null | MacroPoint[]): MacroPoint | null {
+  const data = Array.isArray(series) ? series : series?.data;
+  if (!data?.length) return null;
+  return data[data.length - 1];
+}
+
+/** Compact number formatter for macro values (auto-choose $T/$B/$M/raw). */
+export function fmtMacro(v: number | null | undefined, unit: "$" | "%" | "" = ""): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return "-";
+  const abs = Math.abs(v);
+  if (unit === "%") return `${v.toFixed(2)}%`;
+  if (unit === "$") {
+    if (abs >= 1e6) return `$${(v / 1e6).toFixed(2)}T`;  // millions → trillions
+    if (abs >= 1e3) return `$${(v / 1e3).toFixed(2)}B`;  // millions → billions
+    return `$${v.toFixed(0)}M`;
+  }
+  return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
 /** Convert "YYYY-MM-DD" to "YYYYMMDD" (13F filename format). */
 export function periodToFileSuffix(period: string): string {
   return period.replace(/-/g, "");

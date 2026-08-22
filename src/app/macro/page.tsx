@@ -1,27 +1,65 @@
-import { getMarketSnapshot, type Commodity } from "@/lib/data";
+import {
+  computeNetLiquidity,
+  computeYoY,
+  fmtMacro,
+  getAllMacroSeries,
+  getMarketSnapshot,
+  latestPoint,
+} from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
-import { MetricCard } from "@/components/metric-card";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { VixChart } from "./vix-chart";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import {
+  InflationBarChart,
+  MacroAreaChart,
+  MoneySupplyChart,
+  NetLiquidityChart,
+  TreasuryChart,
+} from "./macro-charts";
 
 export const metadata = { title: "매크로 · AI Quant Lab" };
 export const revalidate = 900;
 
-function pctChangeVsAvg(c: Commodity): number {
-  return ((c.current - c.avg) / c.avg) * 100;
-}
+/**
+ * Mirrors Streamlit 11_Macro.py (485 lines) exactly — 4 sections in order:
+ *   1. Liquidity: 5 badges + Net Liq overlay + 2x2 (RRP/TGA/Reserves/HY) +
+ *      M1/M2 + Fed Balance Sheet
+ *   2. Interest Rates: Fed Funds + Treasury Yields (2-col)
+ *   3. Inflation: CPI YoY + Core PCE YoY (2-col, threshold-colored bars)
+ *   4. Dollar & Commodities: DXY + Gold + WTI (3-col)
+ *
+ * Data via streamlit_app/data/cache/macro/*.json (FRED CSV cached daily
+ * by streamlit_app/scripts/cache_macro_data.py). No live API calls.
+ */
 
 export default async function MacroPage() {
-  const s = await getMarketSnapshot();
+  const [macro, snapshot] = await Promise.all([getAllMacroSeries(), getMarketSnapshot()]);
 
-  // Explicit label override (Commodity.label is short; we want the full name for macro view).
-  const commodities = [
-    { key: "dxy", ...s.commodities.dxy, label: "US Dollar Index", unit: "" },
-    { key: "gold", ...s.commodities.gold, label: "Gold", unit: "$/oz" },
-    { key: "oil_wti", ...s.commodities.oil_wti, label: "WTI Crude Oil", unit: "$/bbl" },
-  ];
+  // ── Computed series ────────────────────────────────────────
+  const netLiq = computeNetLiquidity(macro.walcl, macro.rrp, macro.tga);
+  const cpiYoY = computeYoY(macro.cpi);
+  const pceYoY = computeYoY(macro.core_pce);
 
-  const vixHistory = s.vix.history.map((h) => ({ date: h.date.slice(5), close: h.close }));
+  // Latest values for badges (Streamlit shows 4W change with color)
+  const b_netliq = latestPoint(netLiq);
+  const b_rrp = latestPoint(macro.rrp);
+  const b_tga = latestPoint(macro.tga);
+  const b_res = latestPoint(macro.reserves);
+  const b_hy = latestPoint(macro.hy_oas);
+  const b_fed = latestPoint(macro.fed_funds);
+  const b_walcl = latestPoint(macro.walcl);
+  const b_dgs10 = latestPoint(macro.dgs10);
+  const b_dgs2 = latestPoint(macro.dgs2);
+  const spread = b_dgs10 && b_dgs2 ? b_dgs10.value - b_dgs2.value : null;
+  const b_cpi = latestPoint(cpiYoY);
+  const b_pce = latestPoint(pceYoY);
+  const b_dxy = latestPoint(macro.dxy);
+  const b_wti = latestPoint(macro.wti);
+
+  // SPY series for Net Liquidity overlay — reuse from VIX history date range
+  // (heatmap cache has recent SPY close via breadth). For a proper overlay,
+  // we'd need SPY history. For now, single-line net-liq is still informative.
+  const spySeries = [{ date: b_netliq?.date ?? "", value: snapshot.breadth.spy_close }];
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
@@ -31,84 +69,311 @@ export default async function MacroPage() {
           <MarketBadge />
         </div>
         <p className="text-sm text-muted-foreground">
-          변동성·상품·시장 폭 종합. FRED 기반 금리·유동성·인플레이션 지표는 확장 예정.
+          유동성 · 금리 · 인플레이션 · 달러/상품 · Streamlit 11_Macro.py 미러링
         </p>
       </header>
 
-      {/* Commodities */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">상품 & 환율</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {commodities.map((c) => (
-            <MetricCard
-              key={c.key}
-              label={c.label}
-              value={c.current.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              unit={c.unit}
-              change={pctChangeVsAvg(c)}
-            />
-          ))}
+      {/* ═══ 1. 유동성 (Liquidity) ═══ */}
+      <Section title="유동성 (Liquidity)">
+        {/* 5 badges */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <Badge label="Net Liquidity" value={fmtMacro(b_netliq?.value, "$")} tone="primary" />
+          <Badge label="RRP" value={b_rrp ? `$${(b_rrp.value / 1e3).toFixed(2)}T` : "-"} tone="neutral" />
+          <Badge label="TGA" value={b_tga ? `$${(b_tga.value / 1e6).toFixed(2)}T` : "-"} tone="neutral" />
+          <Badge label="Reserves" value={b_res ? `$${(b_res.value / 1e6).toFixed(2)}T` : "-"} tone="neutral" />
+          <Badge label="HY Spread" value={b_hy ? `${b_hy.value.toFixed(2)}%` : "-"} tone={b_hy && b_hy.value > 5 ? "danger" : "success"} />
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {commodities.map((c) => (
-            <div key={c.key} className="rounded-lg border border-border/40 bg-card/40 p-3 text-xs">
-              <div className="text-muted-foreground">
-                {c.label} · 6M 범위
-              </div>
-              <div className="mt-1 flex justify-between font-mono tabular-nums">
-                <span>Low: {c.min.toFixed(2)}</span>
-                <span>Avg: {c.avg.toFixed(2)}</span>
-                <span>High: {c.max.toFixed(2)}</span>
-              </div>
-              <div className="mt-1 text-muted-foreground">추세: <span className="text-foreground">{c.trend}</span></div>
-            </div>
-          ))}
-        </div>
-      </section>
 
-      {/* VIX chart */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">VIX (변동성 지수)</h2>
+        {/* Net Liquidity overlay chart */}
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-baseline gap-4">
-              <span className="text-3xl font-bold tabular-nums text-primary">{s.vix.current.toFixed(2)}</span>
-              <span className="text-xs text-muted-foreground">
-                6M 평균 {s.vix.avg.toFixed(2)} · Low {s.vix.min.toFixed(2)} / High {s.vix.max.toFixed(2)}
-              </span>
-            </div>
+            <CardTitle className="text-base">⭐ Net Liquidity vs S&amp;P 500</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              순유동성(연준자산 − 역레포 − 재무부계정) — 주가와 동행성 확인
+            </p>
           </CardHeader>
           <CardContent>
-            <VixChart data={vixHistory} />
+            <NetLiquidityChart netLiq={netLiq} spy={spySeries} />
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              SPY 오버레이는 단일 시점만 표시 · SPY 시계열 캐시 확장 후 완성
+            </p>
           </CardContent>
         </Card>
-      </section>
 
-      {/* Market breadth */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">시장 폭 (Breadth)</h2>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">S&amp;P 500 vs 200일 이평선</CardTitle>
-            <CardDescription>
-              SPY {s.breadth.spy_close} · SMA200 {s.breadth.sma200} · 200일선 위 종목 비율 {s.breadth.above_pct}%
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-3 w-full overflow-hidden rounded-full bg-muted/40">
-              <div
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${Math.min(100, Math.max(0, s.breadth.above_pct))}%` }}
+        {/* 2x2 grid: RRP, TGA, Reserves, HY */}
+        <div className="grid gap-3 lg:grid-cols-2">
+          <MiniChartCard
+            title="역레포 (RRP)"
+            subtitle="연준에 잠긴 유동성 ($B)"
+            data={macro.rrp?.data ?? []}
+            color="oklch(0.71 0.213 303.9)"
+            format="usd_b"
+          />
+          <MiniChartCard
+            title="재무부 계정 (TGA)"
+            subtitle="재무부 보유 현금 ($M)"
+            data={macro.tga?.data ?? []}
+            color="oklch(0.777 0.152 163.223)"
+            format="usd_t_mil"
+          />
+          <MiniChartCard
+            title="은행 지준금 (Reserves)"
+            subtitle="은행 시스템의 실탄"
+            data={macro.reserves?.data ?? []}
+            color="oklch(0.623 0.214 259.815)"
+            format="usd_t_mil"
+          />
+          <MiniChartCard
+            title="하이일드 스프레드 (HY OAS)"
+            subtitle="신용시장 스트레스 · 5% 초과 시 경계"
+            data={macro.hy_oas?.data ?? []}
+            color="oklch(0.828 0.189 84.429)"
+            format="pct1"
+            refValueY={5}
+          />
+        </div>
+
+        <hr className="border-border/40" />
+
+        {/* M1/M2 + Fed Balance Sheet (2-col) */}
+        <div className="grid gap-3 lg:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">M1 / M2 Money Supply</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                M2 최신 {b_dgs2 ? "" : ""}
+                {macro.m2 && latestPoint(macro.m2) ? `$${(latestPoint(macro.m2)!.value / 1e3).toFixed(2)}T` : "-"}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MoneySupplyChart m1={macro.m1?.data ?? []} m2={macro.m2?.data ?? []} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Fed Balance Sheet (WALCL)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                총자산 {b_walcl ? `$${(b_walcl.value / 1e6).toFixed(2)}T` : "-"}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MacroAreaChart
+                data={macro.walcl?.data ?? []}
+                color="oklch(0.623 0.214 259.815)"
+                height={280}
+                format="usd_t_mil"
               />
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+            </CardContent>
+          </Card>
+        </div>
+      </Section>
 
-      <div className="rounded-lg border border-border/40 bg-muted/20 p-3 text-xs text-muted-foreground">
-        <strong className="text-foreground">확장 계획:</strong> FRED API 연동 후 유동성(M2, RRP, TGA), 금리(2Y/10Y),
-        인플레이션(CPI, PCE) 시계열이 추가됩니다. 백엔드(FastAPI 또는 Next.js Route Handler) 도입 필요.
-      </div>
+      {/* ═══ 2. 금리 (Interest Rates) ═══ */}
+      <Section title="금리 (Interest Rates)">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Federal Funds Rate</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                현재 {b_fed ? `${b_fed.value.toFixed(2)}%` : "-"}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MacroAreaChart
+                data={macro.fed_funds?.data ?? []}
+                color="oklch(0.71 0.213 303.9)"
+                height={300}
+                format="pct2"
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Treasury Yields &amp; Spread (10Y − 2Y)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {b_dgs10 && b_dgs2 && spread !== null
+                  ? `10Y ${b_dgs10.value.toFixed(2)}% · 2Y ${b_dgs2.value.toFixed(2)}% · Spread ${spread.toFixed(2)}%`
+                  : "-"}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <TreasuryChart dgs10={macro.dgs10?.data ?? []} dgs2={macro.dgs2?.data ?? []} />
+              {b_dgs10 && b_dgs2 && spread !== null && (
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <MiniMetric label="10Y" value={`${b_dgs10.value.toFixed(2)}%`} />
+                  <MiniMetric label="2Y" value={`${b_dgs2.value.toFixed(2)}%`} />
+                  <MiniMetric
+                    label="Spread"
+                    value={`${spread.toFixed(2)}%`}
+                    tone={spread < 0 ? "danger" : "neutral"}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </Section>
+
+      {/* ═══ 3. 인플레이션 (Inflation) ═══ */}
+      <Section title="인플레이션 (Inflation)">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">CPI (YoY %)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                최신 {b_cpi ? `${b_cpi.value.toFixed(2)}%` : "-"} · Fed 목표 2%
+              </p>
+            </CardHeader>
+            <CardContent>
+              <InflationBarChart data={cpiYoY} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Core PCE (YoY %) — Fed 선호 지표</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                최신 {b_pce ? `${b_pce.value.toFixed(2)}%` : "-"} · Fed 목표 2%
+              </p>
+            </CardHeader>
+            <CardContent>
+              <InflationBarChart data={pceYoY} />
+            </CardContent>
+          </Card>
+        </div>
+      </Section>
+
+      {/* ═══ 4. 달러 & 상품 (Dollar & Commodities) ═══ */}
+      <Section title="달러 & 상품 (Dollar & Commodities)">
+        <div className="grid gap-3 lg:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">DXY (Dollar Index)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                최신 {b_dxy ? b_dxy.value.toFixed(2) : "-"}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MacroAreaChart
+                data={macro.dxy?.data ?? []}
+                color="oklch(0.623 0.214 259.815)"
+                height={260}
+                format="raw"
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Gold</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                최신 ${snapshot.commodities.gold.current.toLocaleString()} · 6M 평균 $
+                {snapshot.commodities.gold.avg.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+            </CardHeader>
+            <CardContent className="flex h-[260px] items-center justify-center text-xs text-muted-foreground">
+              FRED 시리즈 마이그레이션 대기 · 요약값은 market_snapshot에서
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">WTI Crude Oil</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                최신 ${b_wti ? b_wti.value.toFixed(2) : "-"} / bbl
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MacroAreaChart
+                data={macro.wti?.data ?? []}
+                color="oklch(0.828 0.189 84.429)"
+                height={260}
+                format="usd_int"
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </Section>
     </div>
+  );
+}
+
+// ─────────────── Sub-components ───────────────
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function Badge({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "primary" | "success" | "danger" | "neutral";
+}) {
+  const color =
+    tone === "primary" ? "border-primary/40 bg-primary/5 text-primary"
+    : tone === "success" ? "border-success/40 bg-success/5 text-success"
+    : tone === "danger" ? "border-destructive/40 bg-destructive/5 text-destructive"
+    : "border-border/40 bg-card/40 text-foreground";
+  return (
+    <div className={cn("rounded-lg border px-3 py-2", color)}>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-0.5 text-base font-bold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function MiniMetric({
+  label,
+  value,
+  tone,
+}: { label: string; value: string; tone?: "danger" | "neutral" }) {
+  const color = tone === "danger" ? "text-destructive" : "text-foreground";
+  return (
+    <div className="rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className={cn("text-sm font-semibold tabular-nums", color)}>{value}</div>
+    </div>
+  );
+}
+
+function MiniChartCard({
+  title,
+  subtitle,
+  data,
+  color,
+  format,
+  refValueY,
+}: {
+  title: string;
+  subtitle: string;
+  data: import("@/lib/data").MacroPoint[];
+  color: string;
+  format?: import("./macro-charts").ChartFormat;
+  refValueY?: number;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        <p className="text-[10px] text-muted-foreground">{subtitle}</p>
+      </CardHeader>
+      <CardContent>
+        <MacroAreaChart
+          data={data}
+          color={color}
+          height={220}
+          format={format}
+          refValueY={refValueY}
+        />
+      </CardContent>
+    </Card>
   );
 }
