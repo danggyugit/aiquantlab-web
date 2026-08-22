@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { AlertCircle, ArrowRight, Play } from "lucide-react";
+import { AlertCircle, Loader2, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import type { BacktestPreset } from "@/lib/data";
+import { FactorEquityChart, type EquityPoint } from "./factor-equity-chart";
 
 // ── Full strategy registry mirroring streamlit_app/services/factor_strategies.py ──
 
@@ -31,7 +31,7 @@ export const STRATEGIES: StrategyMeta[] = [
     long: "Jegadeesh-Titman 방식. 최근 1개월의 단기 반전을 제거해 순수 중기 모멘텀만 포착." },
   { key: "low_volatility", name: "로우볼", short: "변동성 낮은 종목 보유", category: "price",
     long: "학술적으로 리스크 대비 수익률이 뛰어난 저변동성 종목 프리미엄을 활용." },
-  { key: "mean_reversion", name: "단기 평균회귀", short: "최근 1개월 하락 폭이 큰 종목 매수 (역발상)", category: "price" },
+  { key: "mean_reversion_1m", name: "단기 평균회귀", short: "최근 1개월 하락 폭이 큰 종목 매수 (역발상)", category: "price" },
   { key: "high_52w", name: "52주 신고가 근접", short: "12개월 최고가에 가까운 종목 (강세 지속)", category: "price" },
   { key: "risk_adj_momentum", name: "리스크조정 모멘텀", short: "변동성 대비 12개월 수익률 상위", category: "price" },
   { key: "momentum_lowvol", name: "모멘텀 × 로우볼", short: "모멘텀 상위 + 저변동성 결합", category: "price" },
@@ -86,14 +86,66 @@ type FormState = {
   cap: string;
 };
 
+// Response shape from POST /factor-backtest — matches FactorBacktestResult in
+// api/factor_backtest.py.
+type FactorBacktestResponse = {
+  strategy_name: string;
+  strategy_category: string;
+  equity_curve: EquityPoint[];
+  rebalance_history: Array<{
+    date: string;
+    period_return_pct: number;
+    portfolio_equity: number;
+    picks: string[];
+    n_picks: number;
+  }>;
+  metrics: {
+    total_return_pct?: number;
+    cagr_pct?: number;
+    sharpe?: number;
+    volatility_pct?: number;
+    max_drawdown_pct?: number;
+    period_win_rate_pct?: number;
+  };
+  benchmark_metrics: Record<string, Record<string, number>>;
+  universe_size: number;
+  final_picks: string[];
+  final_picks_date: string | null;
+  warnings: string[];
+};
+
 const today = new Date();
 const defaultStart = new Date(2023, 0, 1);
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
+async function runFactorBacktest(apiUrl: string, req: {
+  strategy_key: string;
+  start_date: string;
+  end_date: string;
+  rebalance_months: number;
+  n_stocks: number;
+  tc_pct: number;
+  sector: string | null;
+  cap_tier: string | null;
+}): Promise<FactorBacktestResponse> {
+  const res = await fetch(`${apiUrl.replace(/\/$/, "")}/factor-backtest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+    signal: AbortSignal.timeout(3 * 60 * 1000),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 export function FactorLabClient({
   presets,
   sectors,
-}: { presets: BacktestPreset[]; sectors: string[] }) {
+  apiUrl,
+}: { presets: BacktestPreset[]; sectors: string[]; apiUrl?: string }) {
   return (
     <Tabs defaultValue="single">
       <TabsList className="flex flex-wrap gap-1 bg-transparent p-0">
@@ -109,11 +161,11 @@ export function FactorLabClient({
       </TabsList>
 
       <TabsContent value="single" className="mt-4">
-        <SingleTab sectors={sectors} presets={presets} />
+        <SingleTab sectors={sectors} presets={presets} apiUrl={apiUrl} />
       </TabsContent>
 
       <TabsContent value="compare" className="mt-4">
-        <CompareTab sectors={sectors} presets={presets} />
+        <CompareTab sectors={sectors} apiUrl={apiUrl} />
       </TabsContent>
 
       <TabsContent value="guide" className="mt-4">
@@ -125,7 +177,7 @@ export function FactorLabClient({
 
 // ─────────────── Tab 1: Single Strategy ───────────────
 
-function SingleTab({ sectors, presets }: { sectors: string[]; presets: BacktestPreset[] }) {
+function SingleTab({ sectors, apiUrl }: { sectors: string[]; presets: BacktestPreset[]; apiUrl?: string }) {
   const [form, setForm] = useState<FormState>({
     strategy: "momentum_12m",
     startDate: isoDate(defaultStart),
@@ -133,21 +185,40 @@ function SingleTab({ sectors, presets }: { sectors: string[]; presets: BacktestP
     rebalance: 1,
     nStocks: "5",
     tc: "0.30",
-    sector: "Information Technology",
-    cap: "Large Cap",
+    sector: "전체",
+    cap: "전체",
   });
-  const [result, setResult] = useState<BacktestPreset | null>(null);
-  const [showBanner, setShowBanner] = useState(false);
+  const [result, setResult] = useState<FactorBacktestResponse | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const selected = STRATEGIES.find((s) => s.key === form.strategy);
 
-  function handleRun() {
-    // Real Factor Lab backtest computation requires Python (fundamentals PIT
-    // joins, monthly rebalance loop). Not runnable in browser. Show the
-    // closest AI Quant Lab preset as a proxy result.
-    setShowBanner(true);
-    const proxyPreset = presets[0] ?? null;
-    setResult(proxyPreset);
+  async function handleRun() {
+    if (!apiUrl) {
+      setError("백엔드 API가 설정되지 않았습니다. .env.local에 NEXT_PUBLIC_API_URL을 설정하세요.");
+      return;
+    }
+    setIsRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const data = await runFactorBacktest(apiUrl, {
+        strategy_key: form.strategy,
+        start_date: form.startDate,
+        end_date: form.endDate,
+        rebalance_months: form.rebalance,
+        n_stocks: parseInt(form.nStocks) || 5,
+        tc_pct: parseFloat(form.tc) || 0.3,
+        sector: form.sector === "전체" ? null : form.sector,
+        cap_tier: form.cap === "전체" ? null : form.cap,
+      });
+      setResult(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsRunning(false);
+    }
   }
 
   return (
@@ -236,53 +307,124 @@ function SingleTab({ sectors, presets }: { sectors: string[]; presets: BacktestP
             </div>
           </div>
 
-          <Button onClick={handleRun} className="gap-1.5">
-            <Play className="h-4 w-4" /> 백테스트 실행
+          <Button onClick={handleRun} disabled={isRunning} className="gap-1.5">
+            {isRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> 백테스트 실행 중...</> : <><Play className="h-4 w-4" /> 백테스트 실행</>}
           </Button>
+          {isRunning && (
+            <div className="text-xs text-muted-foreground">
+              Render 서버가 콜드 스타트 상태이면 최초 요청은 1-2분 정도 소요될 수 있습니다.
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {showBanner && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100/90">
-          <AlertCircle className="mr-1 inline h-3 w-3 text-amber-400" />
-          <strong className="text-amber-400">계산 한계:</strong> Factor Lab 백테스트는 Python 백엔드(PIT 재무 데이터 + 20+ 전략 스코어링)가 필요합니다.
-          실시간 실행 대신 AI Quant Lab의 프리셋 결과를 참고하시거나, Streamlit 원본에서 실행하세요.
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+          <AlertCircle className="mr-1 inline h-3 w-3" />
+          <strong>에러:</strong> {error}
         </div>
       )}
 
-      {result && (
-        <SingleResult preset={result} strategyName={selected?.name ?? ""} />
-      )}
+      {result && <SingleResult data={result} />}
     </div>
   );
 }
 
-function SingleResult({ preset, strategyName }: { preset: BacktestPreset; strategyName: string }) {
-  const s = preset.summary;
+function SingleResult({ data }: { data: FactorBacktestResponse }) {
+  const m = data.metrics;
+  const spy = data.benchmark_metrics.SPY ?? {};
   return (
     <div className="flex flex-col gap-3">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">{strategyName} — 백테스트 결과 (프록시)</CardTitle>
-          <CardDescription className="text-xs">
-            AI Quant Lab의 가장 가까운 프리셋 ({preset.name})으로 대체 표시.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
-            <Metric label="누적 수익률" value={s.total_return_pct !== undefined ? `${s.total_return_pct >= 0 ? "+" : ""}${s.total_return_pct.toFixed(1)}%` : "-"} tone={(s.total_return_pct ?? 0) >= 0 ? "success" : "danger"} />
-            <Metric label="CAGR" value={s.cagr_pct !== undefined ? `${s.cagr_pct >= 0 ? "+" : ""}${s.cagr_pct.toFixed(2)}%` : "-"} tone={(s.cagr_pct ?? 0) >= 0 ? "success" : "danger"} />
-            <Metric label="Sharpe" value={s.sharpe?.toFixed(2) ?? "-"} tone={(s.sharpe ?? 0) > 1 ? "success" : "neutral"} />
-            <Metric label="변동성" value={s.volatility_pct ? `${s.volatility_pct.toFixed(1)}%` : "-"} />
-            <Metric label="최대 낙폭" value={s.max_dd_pct !== undefined ? `${s.max_dd_pct.toFixed(1)}%` : "-"} tone={(s.max_dd_pct ?? 0) > -20 ? "success" : "danger"} />
-            <Metric label="기간 승률" value={s.monthly_win_rate_pct !== undefined ? `${s.monthly_win_rate_pct.toFixed(0)}%` : "-"} />
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">{data.strategy_name}</CardTitle>
+              <CardDescription className="text-xs">
+                유니버스 {data.universe_size}종목 · 리밸런싱 {data.rebalance_history.length}회
+                {data.final_picks_date && ` · 최종 리밸런스 ${data.final_picks_date}`}
+              </CardDescription>
+            </div>
+            <Badge variant="secondary" className="text-[10px]">
+              {data.strategy_category === "price" ? "가격" : data.strategy_category === "fundamentals" ? "펀더멘털" : "복합"}
+            </Badge>
           </div>
-          <Link
-            href="/ai-quant-lab"
-            className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-          >
-            AI Quant Lab에서 상세 결과 보기 <ArrowRight className="h-3 w-3" />
-          </Link>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+            <Metric label="누적 수익률" value={fmtPct(m.total_return_pct)} tone={tone(m.total_return_pct)} />
+            <Metric label="CAGR" value={fmtPct(m.cagr_pct)} tone={tone(m.cagr_pct)} />
+            <Metric label="Sharpe" value={m.sharpe?.toFixed(2) ?? "-"} tone={(m.sharpe ?? 0) > 1 ? "success" : "neutral"} />
+            <Metric label="변동성" value={fmtPct(m.volatility_pct, false)} />
+            <Metric label="최대 낙폭" value={fmtPct(m.max_drawdown_pct, false)} tone={(m.max_drawdown_pct ?? 0) > -20 ? "success" : "danger"} />
+            <Metric label="승률" value={fmtPct(m.period_win_rate_pct, false)} />
+          </div>
+
+          {data.equity_curve.length > 1 && (
+            <div>
+              <div className="mb-1.5 text-xs font-semibold text-muted-foreground">누적 수익 곡선 (SPY 대비)</div>
+              <FactorEquityChart data={data.equity_curve} />
+              {spy.cagr_pct !== undefined && (
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  SPY 벤치마크 — CAGR {fmtPct(spy.cagr_pct)} · Sharpe {spy.sharpe?.toFixed(2) ?? "-"} · MDD {fmtPct(spy.max_drawdown_pct, false)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {data.final_picks.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-xs font-semibold text-muted-foreground">최종 편입 종목</div>
+              <div className="flex flex-wrap gap-1.5">
+                {data.final_picks.map((t) => (
+                  <Badge key={t} variant="secondary" className="font-mono">{t}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.rebalance_history.length > 0 && (
+            <details>
+              <summary className="cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground">
+                리밸런싱 이력 ({data.rebalance_history.length}회)
+              </summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="border-b border-border/60 bg-muted/20 text-left text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1.5">일자</th>
+                      <th className="px-2 py-1.5 text-right">기간 수익률</th>
+                      <th className="px-2 py-1.5 text-right">누적</th>
+                      <th className="px-2 py-1.5">편입 종목</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.rebalance_history.map((r) => (
+                      <tr key={r.date} className="border-b border-border/30">
+                        <td className="px-2 py-1.5 font-mono">{r.date}</td>
+                        <td className={cn(
+                          "px-2 py-1.5 text-right tabular-nums",
+                          r.period_return_pct >= 0 ? "text-success" : "text-destructive",
+                        )}>
+                          {r.period_return_pct >= 0 ? "+" : ""}{r.period_return_pct.toFixed(2)}%
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{r.portfolio_equity.toFixed(3)}</td>
+                        <td className="px-2 py-1.5 font-mono text-[10px]">{r.picks.join(", ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+
+          {data.warnings.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-amber-100/90">
+              {data.warnings.map((w, i) => (
+                <div key={i}>⚠️ {w}</div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -291,7 +433,7 @@ function SingleResult({ preset, strategyName }: { preset: BacktestPreset; strate
 
 // ─────────────── Tab 2: Compare Strategies ───────────────
 
-function CompareTab({ sectors, presets }: { sectors: string[]; presets: BacktestPreset[] }) {
+function CompareTab({ sectors, apiUrl }: { sectors: string[]; apiUrl?: string }) {
   const [selectedKeys, setSelectedKeys] = useState<string[]>(["momentum_12m", "low_volatility", "magic_formula"]);
   const [form, setForm] = useState({
     startDate: isoDate(defaultStart),
@@ -299,10 +441,12 @@ function CompareTab({ sectors, presets }: { sectors: string[]; presets: Backtest
     rebalance: 1,
     nStocks: "5",
     tc: "0.30",
-    sector: "Information Technology",
-    cap: "Large Cap",
+    sector: "전체",
+    cap: "전체",
   });
-  const [showResult, setShowResult] = useState(false);
+  const [results, setResults] = useState<Array<{ key: string; data?: FactorBacktestResponse; error?: string }>>([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function toggle(key: string) {
     if (selectedKeys.includes(key)) {
@@ -312,17 +456,47 @@ function CompareTab({ sectors, presets }: { sectors: string[]; presets: Backtest
     }
   }
 
+  async function handleRun() {
+    if (!apiUrl) {
+      setError("백엔드 API가 설정되지 않았습니다.");
+      return;
+    }
+    setIsRunning(true);
+    setError(null);
+    setResults([]);
+
+    const promises = selectedKeys.map(async (key) => {
+      try {
+        const data = await runFactorBacktest(apiUrl, {
+          strategy_key: key,
+          start_date: form.startDate,
+          end_date: form.endDate,
+          rebalance_months: form.rebalance,
+          n_stocks: parseInt(form.nStocks) || 5,
+          tc_pct: parseFloat(form.tc) || 0.3,
+          sector: form.sector === "전체" ? null : form.sector,
+          cap_tier: form.cap === "전체" ? null : form.cap,
+        });
+        return { key, data };
+      } catch (e) {
+        return { key, error: e instanceof Error ? e.message : String(e) };
+      }
+    });
+    const settled = await Promise.all(promises);
+    setResults(settled);
+    setIsRunning(false);
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">복수 전략 비교</CardTitle>
           <CardDescription className="text-xs">
-            최대 5개 전략을 같은 조건으로 동시 백테스트
+            최대 5개 전략을 같은 조건으로 병렬 백테스트
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {/* Strategy multi-select chips */}
           <div>
             <Label className="mb-1.5 block text-xs text-muted-foreground">
               비교할 전략 (최대 5개, 현재 {selectedKeys.length}개)
@@ -348,7 +522,6 @@ function CompareTab({ sectors, presets }: { sectors: string[]; presets: Backtest
             </div>
           </div>
 
-          {/* Shared params (same as single) */}
           <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
             <div>
               <Label className="mb-1 block text-xs text-muted-foreground">백테스트 기간</Label>
@@ -398,63 +571,67 @@ function CompareTab({ sectors, presets }: { sectors: string[]; presets: Backtest
             </div>
           </div>
 
-          <Button onClick={() => setShowResult(true)} disabled={selectedKeys.length === 0} className="gap-1.5">
-            <Play className="h-4 w-4" /> 비교 실행
+          <Button onClick={handleRun} disabled={isRunning || selectedKeys.length === 0} className="gap-1.5">
+            {isRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> 실행 중...</> : <><Play className="h-4 w-4" /> 비교 실행</>}
           </Button>
         </CardContent>
       </Card>
 
-      {showResult && (
-        <>
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-100/90">
-            <AlertCircle className="mr-1 inline h-3 w-3 text-amber-400" />
-            <strong className="text-amber-400">계산 한계:</strong> 다중 전략 백테스트는 Python 백엔드가 필요합니다.
-            AI Quant Lab의 5개 프리셋으로 비교 UI만 표시.
-          </div>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">비교 결과 (프록시)</CardTitle>
-              <CardDescription className="text-xs">
-                AI Quant Lab 프리셋으로 대체. 선택 전략은 아래 배지로 표시.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-3 flex flex-wrap gap-1.5">
-                {selectedKeys.map((k) => {
-                  const s = STRATEGIES.find((x) => x.key === k);
-                  return <Badge key={k} variant="secondary">{s?.name ?? k}</Badge>;
-                })}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2">프리셋</th>
-                      <th className="px-3 py-2 text-right">CAGR</th>
-                      <th className="px-3 py-2 text-right">Sharpe</th>
-                      <th className="px-3 py-2 text-right">MDD</th>
-                      <th className="px-3 py-2 text-right">Sortino</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {presets.slice(0, 5).map((p) => (
-                      <tr key={p.preset_id} className="border-b border-border/30">
-                        <td className="px-3 py-2 font-semibold">{p.name}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-success">{p.summary.cagr_pct?.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{p.summary.sharpe?.toFixed(2) ?? "-"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-destructive">{p.summary.max_dd_pct?.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{p.summary.sortino?.toFixed(2) ?? "-"}</td>
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+          <AlertCircle className="mr-1 inline h-3 w-3" />
+          <strong>에러:</strong> {error}
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">비교 결과</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">전략</th>
+                  <th className="px-3 py-2 text-right">누적</th>
+                  <th className="px-3 py-2 text-right">CAGR</th>
+                  <th className="px-3 py-2 text-right">Sharpe</th>
+                  <th className="px-3 py-2 text-right">MDD</th>
+                  <th className="px-3 py-2 text-right">변동성</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => {
+                  const meta = STRATEGIES.find((s) => s.key === r.key);
+                  if (r.error) {
+                    return (
+                      <tr key={r.key} className="border-b border-border/30">
+                        <td className="px-3 py-2 font-semibold">{meta?.name ?? r.key}</td>
+                        <td colSpan={5} className="px-3 py-2 text-xs text-destructive">에러: {r.error}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <Link href="/ai-quant-lab" className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                AI Quant Lab에서 상세 비교 <ArrowRight className="h-3 w-3" />
-              </Link>
-            </CardContent>
-          </Card>
-        </>
+                    );
+                  }
+                  const m = r.data!.metrics;
+                  return (
+                    <tr key={r.key} className="border-b border-border/30">
+                      <td className="px-3 py-2 font-semibold">{meta?.name ?? r.key}</td>
+                      <td className={cn("px-3 py-2 text-right tabular-nums", (m.total_return_pct ?? 0) >= 0 ? "text-success" : "text-destructive")}>
+                        {fmtPct(m.total_return_pct)}
+                      </td>
+                      <td className={cn("px-3 py-2 text-right tabular-nums", (m.cagr_pct ?? 0) >= 0 ? "text-success" : "text-destructive")}>
+                        {fmtPct(m.cagr_pct)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{m.sharpe?.toFixed(2) ?? "-"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-destructive">{fmtPct(m.max_drawdown_pct, false)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtPct(m.volatility_pct, false)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
@@ -511,6 +688,17 @@ function StrategyGroup({ title, strategies }: { title: string; strategies: Strat
 }
 
 // ─────────────── Utility ───────────────
+
+function fmtPct(v: number | undefined, withSign = true): string {
+  if (v === undefined || v === null || Number.isNaN(v)) return "-";
+  const sign = withSign && v >= 0 ? "+" : "";
+  return `${sign}${v.toFixed(2)}%`;
+}
+
+function tone(v: number | undefined): "success" | "danger" | "neutral" {
+  if (v === undefined || v === null) return "neutral";
+  return v >= 0 ? "success" : "danger";
+}
 
 function Metric({
   label,

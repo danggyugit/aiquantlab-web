@@ -12,13 +12,14 @@ export const revalidate = 900;
  *   2. 전략 비교 (Compare Strategies): multi-select up to 5 + shared config + comparison
  *   3. 전략 설명 (Strategy Guide): 20+ 전략 카테고리별 설명
  *
- * Real Factor Lab backtest execution requires Python (PIT financial joins,
- * monthly rebalance loop with 20+ scoring functions). Not runnable in
- * browser. Run button loads AI Quant Lab's closest preset + banner note.
+ * Real Factor Lab backtest execution runs on the FastAPI backend (POST
+ * /factor-backtest). Uses cached pickle data + factor_strategies.py's pure
+ * rank_fn — no yfinance downloads, ~5-15s per backtest on Render Free.
  */
 export default async function FactorLabPage() {
   const [presets, stocks] = await Promise.all([getAllBacktestPresets(), getStocksMeta()]);
   const sectors = Array.from(new Set(stocks.map((s) => s.sector))).filter(Boolean).sort();
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
@@ -39,7 +40,7 @@ export default async function FactorLabPage() {
         </div>
       </div>
 
-      <FactorLabClient presets={presets} sectors={sectors} />
+      <FactorLabClient presets={presets} sectors={sectors} apiUrl={apiUrl} />
     </div>
   );
 }

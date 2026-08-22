@@ -42,7 +42,9 @@ export default async function AiQuantLabPage() {
       <Lab
         presets={presets}
         presetLoadedInitial={presets[0]}
-        apiUrl={process.env.NEXT_PUBLIC_API_URL}
+        // AI Quant Lab's full ML pipeline (Ensemble + regime) exceeds the
+        // 10-min Render Free HTTP timeout. Factor Lab uses the API instead;
+        // this page stays on preset matching.
       />
     </div>
   );
