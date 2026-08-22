@@ -2,16 +2,19 @@ import type { BacktestConfig, BacktestPreset } from "@/lib/data";
 
 /**
  * Streamlit `factor_backtest_service`는 브라우저에서 실행 불가 (yfinance·SEC·ML 학습).
- * 대신 stock-dashboard 스케줄러가 매일 5개 대표 프리셋을 미리 계산해두고 있음.
- * 사용자가 config 폼에서 조합을 만들면, 아래 5개 중 **가장 가까운 프리셋**을 매칭해 로드.
+ * stock-dashboard 스케줄러가 매일 50개 프리셋(10섹터 × 5전략)을 계산하고
+ * git으로 배포한다. 사용자가 config 폼에서 조합을 만들면, 아래 로직으로
+ * **가장 가까운 프리셋**을 매칭해 로드한다.
  *
- * 매칭 우선순위:
- *   1. cash_strategy 정확히 일치 → +5점
- *   2. use_ensemble 일치 → +3점
- *   3. use_inv_vol_weight 일치 → +2점
- *   4. use_momentum_weight 일치 → +2점
- *   5. use_mom_filter 일치 → +1점
- * 나머지 (universe·리밸런싱 주기·롤링윈도우 등)은 프리셋 간 차이 없음.
+ * 매칭 우선순위 (높을수록 중요):
+ *   1. 섹터 정확 매칭 (10점)  — 첫 sector가 일치하면 큰 가중치
+ *   2. cash_strategy 일치 (5점)
+ *   3. use_ensemble 일치 (3점)
+ *   4. use_momentum_weight 일치 (2점)
+ *   5. use_inv_vol_weight 일치 (2점)
+ *   6. use_mom_filter 일치 (1점)
+ *
+ * `exact = true`는 모든 항목이 정확히 일치하는 경우.
  */
 export function findClosestPreset(
   userConfig: Partial<BacktestConfig>,
@@ -21,22 +24,32 @@ export function findClosestPreset(
   let bestScore = -Infinity;
 
   for (const p of presets) {
-    let score = 0;
     const c = p.config;
+    let score = 0;
+
+    // Sector match — highest priority (each preset targets 1 sector)
+    const userFirstSector = userConfig.sectors?.[0];
+    const presetFirstSector = c.sectors?.[0];
+    if (userFirstSector && presetFirstSector && userFirstSector === presetFirstSector) {
+      score += 10;
+    }
+
+    // Strategy toggles
     if (userConfig.cash_strategy === c.cash_strategy) score += 5;
     if (userConfig.use_ensemble === c.use_ensemble) score += 3;
-    if (userConfig.use_inv_vol_weight === c.use_inv_vol_weight) score += 2;
     if (userConfig.use_momentum_weight === c.use_momentum_weight) score += 2;
+    if (userConfig.use_inv_vol_weight === c.use_inv_vol_weight) score += 2;
     if (userConfig.use_mom_filter === c.use_mom_filter) score += 1;
+
     if (score > bestScore) {
       bestScore = score;
       best = p;
     }
   }
 
-  // Exact match = all 5 strategy flags identical
   const c = best.config;
   const exact =
+    userConfig.sectors?.[0] === c.sectors?.[0] &&
     userConfig.cash_strategy === c.cash_strategy &&
     userConfig.use_ensemble === c.use_ensemble &&
     userConfig.use_inv_vol_weight === c.use_inv_vol_weight &&

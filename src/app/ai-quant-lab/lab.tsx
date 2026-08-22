@@ -112,41 +112,8 @@ export function Lab({ presets, presetLoadedInitial, apiUrl }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Preset loader */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Zap className="h-4 w-4 text-premium" />
-            <CardTitle className="text-base">프리셋 로더</CardTitle>
-          </div>
-          <CardDescription className="text-xs">
-            매일 자동 계산되는 5개 대표 백테스트 결과. 즉시 로드 가능.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {presets.map((p) => (
-              <button
-                key={p.preset_id}
-                onClick={() => handleLoadPreset(p.preset_id)}
-                className="rounded-lg border border-border/40 p-3 text-left transition-colors hover:border-primary/60 hover:bg-primary/5"
-              >
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-semibold">{p.name}</span>
-                  <span className="text-xs font-mono text-success tabular-nums">
-                    {p.summary.cagr_pct?.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="mt-1 text-[10px] text-muted-foreground line-clamp-1">{p.description}</div>
-                <div className="mt-1 flex gap-2 text-[10px] text-muted-foreground">
-                  <span>Sharpe {p.summary.sharpe?.toFixed(2)}</span>
-                  <span>MDD {p.summary.max_dd_pct?.toFixed(1)}%</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Preset loader — 50 presets grouped by sector */}
+      <PresetLoader presets={presets} onLoad={handleLoadPreset} />
 
       {/* Config form */}
       <Card>
@@ -368,6 +335,105 @@ export function Lab({ presets, presetLoadedInitial, apiUrl }: Props) {
 }
 
 // ---------- Sub-components ----------
+
+/**
+ * Preset loader — 50 presets (10 sectors × 5 strategies) grouped by sector.
+ * User picks sector first, then sees all 5 strategy variants ranked by CAGR.
+ */
+function PresetLoader({
+  presets,
+  onLoad,
+}: { presets: BacktestPreset[]; onLoad: (id: string) => void }) {
+  const [selectedSector, setSelectedSector] = useState<string | null>(null);
+
+  // Group presets by first sector name
+  const groups = new Map<string, BacktestPreset[]>();
+  for (const p of presets) {
+    const sec = p.config.sectors?.[0] ?? "Unknown";
+    if (!groups.has(sec)) groups.set(sec, []);
+    groups.get(sec)!.push(p);
+  }
+  const sectorNames = Array.from(groups.keys()).sort();
+  const activeSector = selectedSector ?? sectorNames[0];
+  const activePresets = (groups.get(activeSector) ?? []).sort(
+    (a, b) => (b.summary.cagr_pct ?? 0) - (a.summary.cagr_pct ?? 0),
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <Zap className="h-4 w-4 text-premium" />
+          <CardTitle className="text-base">프리셋 로더</CardTitle>
+          <Badge variant="secondary" className="text-[10px]">
+            {presets.length}개 · {groups.size}개 섹터
+          </Badge>
+        </div>
+        <CardDescription className="text-xs">
+          매일 자동 계산되는 백테스트 결과. 섹터 선택 → 5개 전략 비교.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {/* Sector picker chips */}
+        <div className="flex flex-wrap gap-1.5">
+          {sectorNames.map((sec) => (
+            <button
+              key={sec}
+              onClick={() => setSelectedSector(sec)}
+              className={
+                "rounded-full border px-2.5 py-1 text-xs transition-colors " +
+                (sec === activeSector
+                  ? "border-primary/60 bg-primary/15 text-primary font-semibold"
+                  : "border-border/40 text-muted-foreground hover:bg-muted/40")
+              }
+            >
+              {sec.split(" ").map((w) => w[0]).join("").slice(0, 3)} {" · "}
+              <span className="ml-1 opacity-80">{sec}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Strategy cards for the selected sector */}
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {activePresets.map((p) => {
+            const cagr = p.summary.cagr_pct;
+            const cagrColor =
+              cagr === undefined ? "text-muted-foreground"
+                : cagr >= 20 ? "text-success"
+                : cagr >= 0 ? "text-foreground"
+                : "text-destructive";
+            return (
+              <button
+                key={p.preset_id}
+                onClick={() => onLoad(p.preset_id)}
+                className="rounded-lg border border-border/40 p-3 text-left transition-colors hover:border-primary/60 hover:bg-primary/5"
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-semibold">{p.name}</span>
+                  <span className={`text-xs font-mono tabular-nums ${cagrColor}`}>
+                    {cagr !== undefined ? `${cagr.toFixed(1)}%` : "-"}
+                  </span>
+                </div>
+                <div className="mt-1 line-clamp-1 text-[10px] text-muted-foreground">
+                  {p.description}
+                </div>
+                <div className="mt-1 flex gap-2 text-[10px] text-muted-foreground">
+                  <span>Sharpe {p.summary.sharpe?.toFixed(2) ?? "-"}</span>
+                  <span>MDD {p.summary.max_dd_pct?.toFixed(1) ?? "-"}%</span>
+                </div>
+              </button>
+            );
+          })}
+          {activePresets.length === 0 && (
+            <div className="col-span-full py-6 text-center text-xs text-muted-foreground">
+              이 섹터의 프리셋이 아직 계산되지 않았습니다. Windows 스케줄러 실행 후 확인하세요.
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (

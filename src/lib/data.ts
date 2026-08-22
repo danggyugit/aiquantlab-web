@@ -261,13 +261,34 @@ export type BacktestPreset = {
   updated_at?: string;
 };
 
-export const BACKTEST_PRESET_IDS = [
-  "it_ensemble",
-  "it_equal",
-  "it_invvol",
-  "it_invvol_regime",
-  "it_momentum",
+// 50-preset matrix: 10 sectors × 5 strategies (see
+// stock-dashboard/streamlit_app/scripts/run_preset_backtests.py:SECTORS + STRATEGIES).
+// Sector codes: it, hc, fin, cd, cs, ind, staples, en, mat, re
+// Strategy codes: equal, momentum, invvol, ensemble, regime
+export const BACKTEST_SECTORS = [
+  { key: "it",       short: "IT",             full: "Information Technology" },
+  { key: "hc",       short: "Health Care",    full: "Health Care" },
+  { key: "fin",      short: "Financials",     full: "Financials" },
+  { key: "cd",       short: "Consumer Disc.", full: "Consumer Discretionary" },
+  { key: "cs",       short: "Comm. Services", full: "Communication Services" },
+  { key: "ind",      short: "Industrials",    full: "Industrials" },
+  { key: "staples",  short: "Consumer Stap.", full: "Consumer Staples" },
+  { key: "en",       short: "Energy",         full: "Energy" },
+  { key: "mat",      short: "Materials",      full: "Materials" },
+  { key: "re",       short: "Real Estate",    full: "Real Estate" },
 ] as const;
+
+export const BACKTEST_STRATEGIES = [
+  { key: "equal",    label: "Equal Weight" },
+  { key: "momentum", label: "Momentum-Weight" },
+  { key: "invvol",   label: "Inverse-Vol" },
+  { key: "ensemble", label: "Ensemble ML + Inv-Vol" },
+  { key: "regime",   label: "Inv-Vol + Regime Cash" },
+] as const;
+
+export const BACKTEST_PRESET_IDS: readonly string[] = BACKTEST_SECTORS.flatMap((s) =>
+  BACKTEST_STRATEGIES.map((st) => `${s.key}_${st.key}`),
+);
 
 // 13F holding entry (from data/cache/sec/13f/*.json)
 export type Holding13F = {
@@ -327,7 +348,15 @@ export function getBacktestPreset(id: string): Promise<BacktestPreset> {
 }
 
 export async function getAllBacktestPresets(): Promise<BacktestPreset[]> {
-  return Promise.all(BACKTEST_PRESET_IDS.map((id) => getBacktestPreset(id)));
+  // Not all 50 presets may exist yet (initial rollout, or Windows scheduler
+  // partially failed). Fetch tolerantly and filter out missing ones so the
+  // UI shows whatever's available instead of failing the whole build.
+  const results = await Promise.allSettled(
+    BACKTEST_PRESET_IDS.map((id) => getBacktestPreset(id)),
+  );
+  return results
+    .filter((r): r is PromiseFulfilledResult<BacktestPreset> => r.status === "fulfilled")
+    .map((r) => r.value);
 }
 
 /** sec/_metadata.json — one entry per CIK with latest_period. */
