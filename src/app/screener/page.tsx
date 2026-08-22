@@ -1,30 +1,49 @@
-import { getFundamentals, getStocksMeta } from "@/lib/data";
+import { getFundamentals, getHeatmap, getStocksMeta, latestQuote } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
+import { Badge } from "@/components/ui/badge";
 import { ScreenerClient, type ScreenerRow } from "./screener-client";
 
 export const metadata = { title: "스크리너 · AI Quant Lab" };
 export const revalidate = 900;
 
+/**
+ * Mirrors Streamlit 8_Screener.py:
+ *   1. Filter form (14 selectboxes/inputs, Apply/Reset)
+ *   2. Sort by + Order (2 selectboxes)
+ *   3. Results dataframe
+ *   4. Sector Distribution bar chart
+ */
 export default async function ScreenerPage() {
-  const [fund, stocks] = await Promise.all([getFundamentals(), getStocksMeta()]);
+  const [fund, stocks, heatmap] = await Promise.all([
+    getFundamentals(),
+    getStocksMeta(),
+    getHeatmap(),
+  ]);
 
-  // Join meta + fundamentals by ticker.
   const rows: ScreenerRow[] = stocks
     .map((s) => {
       const f = fund.tickers[s.ticker];
       if (!f) return null;
+      const priceData = heatmap.tickers[s.ticker];
+      const q = priceData ? latestQuote(priceData) : null;
+      const marketCap = priceData?.market_cap ?? 0;
       return {
         ticker: s.ticker,
         name: s.name,
         sector: s.sector,
         industry: s.industry,
         cap_tier: s.cap_tier,
+        price: q?.price ?? null,
+        market_cap: marketCap,
         pe_ratio: f.pe_ratio,
         pb_ratio: f.pb_ratio,
+        ps_ratio: f.ps_ratio,
+        eps: f.eps,
         roe: f.roe,
         dividend_yield: f.dividend_yield,
         beta: f.beta,
         debt_to_equity: f.debt_to_equity,
+        avg_volume: f.avg_volume,
       } satisfies ScreenerRow;
     })
     .filter((r): r is ScreenerRow => r !== null);
@@ -44,9 +63,13 @@ export default async function ScreenerPage() {
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">스크리너</h1>
           <MarketBadge />
         </div>
-        <p className="text-xs text-muted-foreground">
-          Updated {updatedAt} KST · {rows.length.toLocaleString()} S&amp;P500 종목 펀더멘털
-        </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>Cached:</span>
+          <Badge variant="secondary" className="text-[11px]">
+            {rows.length.toLocaleString()} stocks
+          </Badge>
+          <span>Newest: {updatedAt} KST</span>
+        </div>
       </header>
 
       <ScreenerClient rows={rows} sectors={sectors} />
