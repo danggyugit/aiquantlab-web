@@ -50,6 +50,7 @@ export type Commodity = {
   max: number;
   avg: number;
   trend: Trend;
+  history?: Array<{ date: string; close: number }>;
 };
 
 export type Commodities = {
@@ -62,6 +63,7 @@ export type Breadth = {
   spy_close: number;
   sma200: number;
   above_pct: number;
+  history?: Array<{ date: string; close: number }>;
 };
 
 export type MarketSnapshot = {

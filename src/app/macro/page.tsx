@@ -16,6 +16,7 @@ import {
   NetLiquidityChart,
   TreasuryChart,
 } from "./macro-charts";
+import { Interpretation, inflationStatus, statusFromThreshold } from "./interpretation";
 
 export const metadata = { title: "매크로 · AI Quant Lab" };
 export const revalidate = 900;
@@ -97,6 +98,11 @@ export default async function MacroPage() {
             <p className="mt-2 text-[10px] text-muted-foreground">
               SPY 오버레이는 단일 시점만 표시 · SPY 시계열 캐시 확장 후 완성
             </p>
+            <Interpretation
+              direction="up_bullish"
+              status="neutral"
+              note="Net Liquidity가 늘면 시장에 유동성이 공급되어 주가와 동행하는 경향. 방향성 반전이 나오면 조기 경보."
+            />
           </CardContent>
         </Card>
 
@@ -108,6 +114,13 @@ export default async function MacroPage() {
             data={macro.rrp?.data ?? []}
             color="oklch(0.71 0.213 303.9)"
             format="usd_b"
+            interpretation={
+              <Interpretation
+                direction="down_bullish"
+                status="neutral"
+                note="RRP 잔액이 줄면 그만큼 시장에 유동성이 풀림. 감소 추세 = 우호적, 급증 = 유동성 흡수 신호."
+              />
+            }
           />
           <MiniChartCard
             title="재무부 계정 (TGA)"
@@ -115,6 +128,13 @@ export default async function MacroPage() {
             data={macro.tga?.data ?? []}
             color="oklch(0.777 0.152 163.223)"
             format="usd_t_mil"
+            interpretation={
+              <Interpretation
+                direction="down_bullish"
+                status="neutral"
+                note="TGA가 줄어드는 것은 정부가 돈을 시중에 풀고 있다는 의미 → 유동성 공급. 급증하면 재정 흡수."
+              />
+            }
           />
           <MiniChartCard
             title="은행 지준금 (Reserves)"
@@ -122,6 +142,13 @@ export default async function MacroPage() {
             data={macro.reserves?.data ?? []}
             color="oklch(0.623 0.214 259.815)"
             format="usd_t_mil"
+            interpretation={
+              <Interpretation
+                direction="up_bullish"
+                status="neutral"
+                note="은행이 보유한 여유 자금. 늘어나면 대출·투자 여력↑ → 시장 우호적. QT 국면에는 감소 추세."
+              />
+            }
           />
           <MiniChartCard
             title="하이일드 스프레드 (HY OAS)"
@@ -130,6 +157,13 @@ export default async function MacroPage() {
             color="oklch(0.828 0.189 84.429)"
             format="pct1"
             refValueY={5}
+            interpretation={
+              <Interpretation
+                direction="down_bullish"
+                status={statusFromThreshold(b_hy?.value, 4, 6, "lower-better")}
+                note="회사채 스프레드가 넓어지면 신용시장 스트레스↑ = 위험자산 부담. < 4% 안정 · > 6% 경계 · > 8% 위기."
+              />
+            }
           />
         </div>
 
@@ -147,6 +181,11 @@ export default async function MacroPage() {
             </CardHeader>
             <CardContent>
               <MoneySupplyChart m1={macro.m1?.data ?? []} m2={macro.m2?.data ?? []} />
+              <Interpretation
+                direction="up_bullish"
+                status="neutral"
+                note="통화량이 늘면 자산가격 상승 압력. 급격한 팽창은 인플레 자극, 급격한 수축은 침체 신호."
+              />
             </CardContent>
           </Card>
           <Card>
@@ -162,6 +201,11 @@ export default async function MacroPage() {
                 color="oklch(0.623 0.214 259.815)"
                 height={280}
                 format="usd_t_mil"
+              />
+              <Interpretation
+                direction="up_bullish"
+                status="neutral"
+                note="Fed 자산 증가 = QE (유동성 공급, 시장 우호적) · 감소 = QT (긴축, 부담). 2022년부터 QT 진행."
               />
             </CardContent>
           </Card>
@@ -184,6 +228,11 @@ export default async function MacroPage() {
                 color="oklch(0.71 0.213 303.9)"
                 height={300}
                 format="pct2"
+              />
+              <Interpretation
+                direction="down_bullish"
+                status={statusFromThreshold(b_fed?.value, 3, 5, "lower-better")}
+                note="Fed 정책금리. 인하 사이클 = 성장주·리스크자산 우호적, 인상 사이클 = 부담. 4% 이하 = 완화, 5% 이상 = 긴축."
               />
             </CardContent>
           </Card>
@@ -209,6 +258,11 @@ export default async function MacroPage() {
                   />
                 </div>
               )}
+              <Interpretation
+                direction="neutral"
+                status={spread !== null && spread >= 0 ? "bullish" : "bearish"}
+                note="10Y−2Y 스프레드가 양수 = 정상 곡선, 음수(역전) = 침체 선행 신호 (역사적으로 12~18개월 후 침체)."
+              />
             </CardContent>
           </Card>
         </div>
@@ -226,6 +280,11 @@ export default async function MacroPage() {
             </CardHeader>
             <CardContent>
               <InflationBarChart data={cpiYoY} />
+              <Interpretation
+                direction="down_bullish"
+                status={inflationStatus(b_cpi?.value)}
+                note="Fed 목표 2% 근처가 이상적. 4% 이상 = 긴축 지속 압박, 1% 미만 = 디플레이션 우려."
+              />
             </CardContent>
           </Card>
           <Card>
@@ -237,6 +296,11 @@ export default async function MacroPage() {
             </CardHeader>
             <CardContent>
               <InflationBarChart data={pceYoY} />
+              <Interpretation
+                direction="down_bullish"
+                status={inflationStatus(b_pce?.value)}
+                note="Fed가 정책 결정에 실제 참고하는 인플레 지표. Core PCE < 2.5% 진입 = 금리 인하 가능성↑."
+              />
             </CardContent>
           </Card>
         </div>
@@ -259,6 +323,11 @@ export default async function MacroPage() {
                 height={260}
                 format="raw"
               />
+              <Interpretation
+                direction="down_bullish"
+                status={statusFromThreshold(b_dxy?.value, 100, 106, "lower-better")}
+                note="달러 약세 = 미국 수출·다국적 기업 실적↑ · 신흥국·상품 우호적. > 106 = 강달러 부담."
+              />
             </CardContent>
           </Card>
           <Card>
@@ -269,9 +338,16 @@ export default async function MacroPage() {
                 {snapshot.commodities.gold.avg.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </p>
             </CardHeader>
-            <CardContent className="flex h-[260px] items-center justify-center text-xs text-muted-foreground">
+            <CardContent className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
               FRED 시리즈 마이그레이션 대기 · 요약값은 market_snapshot에서
             </CardContent>
+            <div className="px-6 pb-4">
+              <Interpretation
+                direction="neutral"
+                status="neutral"
+                note="금값 상승 = 인플레·리스크 회피 신호 (안전자산 선호). 방향보다 배경(달러·금리·지정학) 확인 필요."
+              />
+            </div>
           </Card>
           <Card>
             <CardHeader className="pb-2">
@@ -286,6 +362,11 @@ export default async function MacroPage() {
                 color="oklch(0.828 0.189 84.429)"
                 height={260}
                 format="usd_int"
+              />
+              <Interpretation
+                direction="neutral"
+                status={statusFromThreshold(b_wti?.value, 70, 90, "lower-better")}
+                note="적정 가격 (60-80) = 경기 활동 반영 · > $90 = 인플레 재점화 위험 · < $50 = 수요 침체 신호."
               />
             </CardContent>
           </Card>
@@ -351,6 +432,7 @@ function MiniChartCard({
   color,
   format,
   refValueY,
+  interpretation,
 }: {
   title: string;
   subtitle: string;
@@ -358,6 +440,7 @@ function MiniChartCard({
   color: string;
   format?: import("./macro-charts").ChartFormat;
   refValueY?: number;
+  interpretation?: React.ReactNode;
 }) {
   return (
     <Card>
@@ -373,6 +456,7 @@ function MiniChartCard({
           format={format}
           refValueY={refValueY}
         />
+        {interpretation}
       </CardContent>
     </Card>
   );

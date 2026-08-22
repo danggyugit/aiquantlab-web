@@ -15,7 +15,7 @@ import { getHeatmap, getMarketSnapshot, latestQuote } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { HeatmapTreemap } from "@/components/heatmap-treemap";
+import { FinvizHeatmap, type FinvizTicker } from "@/components/finviz-heatmap";
 import { IndexMiniChart } from "@/components/index-mini-chart";
 import { cn } from "@/lib/utils";
 
@@ -41,24 +41,31 @@ const FEATURES = [
 export default async function Home() {
   const [snapshot, heatmap] = await Promise.all([getMarketSnapshot(), getHeatmap()]);
 
+  // Build indices from snapshot history (added by fetch_cache.build_market_snapshot).
+  // Each `hist` is a 90-day array of {date, close} — mini charts consume the last 30.
+  const toMini = (hist: Array<{ date: string; close: number }> | undefined) =>
+    (hist ?? []).slice(-30).map((p) => ({ t: p.date, v: p.close }));
+
+  const spyHist = toMini(snapshot.breadth.history);
+  const vixHist = toMini(snapshot.vix.history);
+  const goldHist = toMini(snapshot.commodities.gold.history);
+  const oilHist = toMini(snapshot.commodities.oil_wti.history);
+
   const spyPrice = snapshot.breadth.spy_close;
   const spyChangePct =
     ((snapshot.breadth.spy_close - snapshot.breadth.sma200) / snapshot.breadth.sma200) * 100;
-  const vixPrice = snapshot.vix.current;
   const vixChangePct = ((snapshot.vix.current - snapshot.vix.avg) / snapshot.vix.avg) * 100;
-  const vixMiniPoints = snapshot.vix.history.slice(-30).map((p) => ({ t: p.date, v: p.close }));
 
   const indices = [
-    { label: "S&P 500 (SPY)", value: spyPrice.toLocaleString(), changePct: spyChangePct, mini: [], hasHistory: false },
-    { label: "VIX", value: vixPrice.toFixed(2), changePct: vixChangePct, mini: vixMiniPoints, hasHistory: true },
+    { label: "S&P 500 (SPY)", value: spyPrice.toLocaleString(), changePct: spyChangePct, mini: spyHist },
+    { label: "VIX",           value: snapshot.vix.current.toFixed(2), changePct: vixChangePct, mini: vixHist },
     {
       label: "Gold",
       value: snapshot.commodities.gold.current.toLocaleString(),
       changePct:
         ((snapshot.commodities.gold.current - snapshot.commodities.gold.avg) /
           snapshot.commodities.gold.avg) * 100,
-      mini: [],
-      hasHistory: false,
+      mini: goldHist,
     },
     {
       label: "WTI Oil",
@@ -66,26 +73,25 @@ export default async function Home() {
       changePct:
         ((snapshot.commodities.oil_wti.current - snapshot.commodities.oil_wti.avg) /
           snapshot.commodities.oil_wti.avg) * 100,
-      mini: [],
-      hasHistory: false,
+      mini: oilHist,
     },
   ];
 
-  const heatmapNodes = Object.entries(heatmap.tickers)
+  // Top 200 by market cap grouped by sector — matches Finviz layout density.
+  const heatmapNodes: FinvizTicker[] = Object.entries(heatmap.tickers)
     .map(([ticker, data]) => {
       const q = latestQuote(data);
-      if (!q) return null;
+      if (!q || !data.sector || !data.market_cap) return null;
       return {
-        name: ticker,
-        fullName: data.name,
+        ticker,
         sector: data.sector,
-        size: data.market_cap,
+        marketCap: data.market_cap,
         changePct: q.changePct,
-      };
+      } satisfies FinvizTicker;
     })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-    .sort((a, b) => b.size - a.size)
-    .slice(0, 60);
+    .filter((x): x is FinvizTicker => x !== null)
+    .sort((a, b) => b.marketCap - a.marketCap)
+    .slice(0, 200);
 
   const updatedAt = new Date(snapshot.updated_at).toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -127,7 +133,7 @@ export default async function Home() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                {idx.hasHistory ? (
+                {idx.mini.length > 1 ? (
                   <IndexMiniChart data={idx.mini} isUp={idx.changePct >= 0} />
                 ) : (
                   <div className="flex h-[80px] items-center justify-center text-[10px] text-muted-foreground">
@@ -148,9 +154,9 @@ export default async function Home() {
             상세 보기 <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
-        <HeatmapTreemap data={heatmapNodes} />
+        <FinvizHeatmap data={heatmapNodes} height={520} onTickerHref={(t) => `/stock/${t}`} />
         <p className="mt-2 text-[10px] text-muted-foreground">
-          박스 크기 = 시가총액 · 색상 = 전일 대비 · 상위 60 종목
+          섹터별 그룹 · 박스 크기 = 시가총액 · 색상 = 전일 대비 · 상위 200 종목 · 클릭 시 상세 이동
         </p>
       </section>
 

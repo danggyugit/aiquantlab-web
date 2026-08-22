@@ -3,7 +3,7 @@ import { TrendingDown, TrendingUp } from "lucide-react";
 import { getHeatmap, getMarketSnapshot, latestQuote, fmtMarketCap } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { SectorStrip } from "@/components/sector-strip";
-import { HeatmapTreemap } from "@/components/heatmap-treemap";
+import { FinvizHeatmap, type FinvizTicker } from "@/components/finviz-heatmap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -41,15 +41,15 @@ export default async function HeatmapPage() {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // Section 3: Treemap nodes (top-60 by market cap)
-  const nodes = [...enriched]
+  // Section 3: Finviz-style heatmap (top-300 by market cap for the standalone page)
+  const nodes: FinvizTicker[] = [...enriched]
+    .filter((e) => e.sector && e.marketCap > 0)
     .sort((a, b) => b.marketCap - a.marketCap)
-    .slice(0, 60)
+    .slice(0, 300)
     .map((e) => ({
-      name: e.ticker,
-      fullName: e.name,
+      ticker: e.ticker,
       sector: e.sector,
-      size: e.marketCap,
+      marketCap: e.marketCap,
       changePct: e.changePct,
     }));
 
@@ -144,12 +144,12 @@ export default async function HeatmapPage() {
         <SectorStrip sectors={snapshot.sectors} />
       </section>
 
-      {/* ═══ 4. Treemap ═══ */}
+      {/* ═══ 4. Finviz-style Heatmap ═══ */}
       <section>
         <h2 className="mb-3 text-lg font-semibold">Market Heatmap</h2>
-        <HeatmapTreemap data={nodes} />
+        <FinvizHeatmap data={nodes} height={720} onTickerHref={(t) => `/stock/${t}`} />
         <p className="mt-2 text-[10px] text-muted-foreground">
-          박스 크기 = 시가총액 · 색상 = 전일 대비 등락 · 상위 60 종목
+          섹터별 그룹 · 박스 크기 = 시가총액 · 색상 = 전일 대비 등락 · 상위 300 종목 · 클릭 시 상세 이동
         </p>
       </section>
 
