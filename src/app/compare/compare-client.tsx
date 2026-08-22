@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Bar,
   BarChart,
@@ -59,7 +60,22 @@ const COLORS = [
 ];
 
 export function CompareClient({ allTickers }: { allTickers: CompareTickerData[] }) {
-  const [selected, setSelected] = useState<string[]>(["AAPL", "MSFT", "GOOGL", "NVDA"]);
+  const searchParams = useSearchParams();
+  // Query param `tickers=AAPL,MSFT` — used when navigating in from /stock/[ticker].
+  const initialFromQuery = useMemo(() => {
+    const raw = searchParams.get("tickers");
+    if (!raw) return null;
+    const known = new Set(allTickers.map((t) => t.ticker));
+    const filtered = raw
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => s && known.has(s))
+      .slice(0, 5);
+    return filtered.length > 0 ? filtered : null;
+  }, [searchParams, allTickers]);
+  const [selected, setSelected] = useState<string[]>(
+    initialFromQuery ?? ["AAPL", "MSFT", "GOOGL", "NVDA"],
+  );
   const [query, setQuery] = useState("");
 
   const tickerMap = useMemo(

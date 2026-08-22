@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getHeatmap, getFundamentals, latestQuote, fmtMarketCap } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { CompareClient, type CompareTickerData } from "./compare-client";
@@ -57,7 +58,9 @@ export default async function ComparePage() {
         </p>
       </header>
 
-      <CompareClient allTickers={data} />
+      <Suspense fallback={<div className="text-sm text-muted-foreground">로딩 중...</div>}>
+        <CompareClient allTickers={data} />
+      </Suspense>
     </div>
   );
 }

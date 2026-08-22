@@ -9,10 +9,13 @@ import {
   getStocksMeta,
   latestQuote,
 } from "@/lib/data";
+import { getCompanyNews, getPriceTarget, getRecommendation } from "@/lib/finnhub";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PriceChart } from "./price-chart";
+import { TradingViewWidget } from "./tradingview-widget";
+import { StockActions } from "./actions";
 import { cn } from "@/lib/utils";
 
 export const revalidate = 900;
@@ -42,10 +45,13 @@ export default async function StockDetailPage({ params }: PageProps) {
   const { ticker: raw } = await params;
   const ticker = raw.toUpperCase();
 
-  const [heatmap, fund, stocks] = await Promise.all([
+  const [heatmap, fund, stocks, news, priceTarget, recommendation] = await Promise.all([
     getHeatmap(),
     getFundamentals(),
     getStocksMeta(),
+    getCompanyNews(ticker, 14),
+    getPriceTarget(ticker),
+    getRecommendation(ticker),
   ]);
 
   const meta = stocks.find((s) => s.ticker === ticker);
@@ -92,6 +98,7 @@ export default async function StockDetailPage({ params }: PageProps) {
             <Badge variant="secondary" className="text-muted-foreground">{meta.industry}</Badge>
             <Badge variant="secondary" className="text-muted-foreground">{meta.cap_tier}</Badge>
           </div>
+          <StockActions ticker={ticker} price={quote?.price} />
         </header>
       </div>
 
@@ -127,36 +134,70 @@ export default async function StockDetailPage({ params }: PageProps) {
         </div>
       )}
 
-      {/* ═══ 2. Chart ═══ */}
+      {/* ═══ 2. Chart — TradingView Advanced Chart widget ═══ */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">가격 차트</CardTitle>
           <CardDescription className="text-xs">
-            {chartData.length}일 · Streamlit은 TradingView 임베드 (풀 기능). 여기는 캐시 기반 area chart.
+            TradingView 임베드 · 인디케이터 · 드로잉 · 여러 봉 지원
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <PriceChart data={chartData} />
+          <TradingViewWidget symbol={ticker} />
         </CardContent>
       </Card>
 
-      {/* ═══ 3. Valuation (AI scenarios + Analyst consensus placeholders) ═══ */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">밸류에이션</h2>
-        <div className="grid gap-3 lg:grid-cols-3">
-          <ScenarioCard emoji="🐻" name="Bear" tone="destructive" description="비관 시나리오" note="Gemini LLM 연동 필요" />
-          <ScenarioCard emoji="🎯" name="Base" tone="primary" description="기본 시나리오" note="Gemini LLM 연동 필요" />
-          <ScenarioCard emoji="🚀" name="Bull" tone="success" description="낙관 시나리오" note="Gemini LLM 연동 필요" />
-        </div>
-        <Card className="mt-3 border-amber-500/30 bg-amber-500/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">애널리스트 컨센서스 (준비 중)</CardTitle>
+      {/* Cache-based mini area chart (fallback / quick reference) */}
+      {chartData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">캐시 기반 미니 차트 ({chartData.length}일)</CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            Streamlit은 Finnhub API로 애널리스트 목표가 (Low/Mean/Median/High), 추천등급 분포, 개별 애널리스트 목표가 바차트를 표시합니다.
-            Finnhub API key + 백엔드 프록시 도입 후 활성화.
+          <CardContent>
+            <PriceChart data={chartData} />
           </CardContent>
         </Card>
+      )}
+
+      {/* ═══ 3. Analyst consensus (Finnhub) ═══ */}
+      <section>
+        <h2 className="mb-3 text-lg font-semibold">애널리스트 컨센서스</h2>
+        {priceTarget ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <KeyMetric label="목표가 (중앙값)" value={`$${priceTarget.targetMedian.toFixed(2)}`} />
+                <KeyMetric
+                  label="평균"
+                  value={`$${priceTarget.targetMean.toFixed(2)}`}
+                  change={quote ? ((priceTarget.targetMean - quote.price) / quote.price) * 100 : undefined}
+                />
+                <KeyMetric label="최고" value={`$${priceTarget.targetHigh.toFixed(2)}`} />
+                <KeyMetric label="최저" value={`$${priceTarget.targetLow.toFixed(2)}`} />
+              </div>
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                업데이트: {new Date(priceTarget.lastUpdated).toLocaleDateString("ko-KR")}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-muted/40">
+            <CardContent className="py-4 text-xs text-muted-foreground">
+              애널리스트 목표가 데이터가 없습니다 (Finnhub 커버리지 부재 또는 API 미연결).
+            </CardContent>
+          </Card>
+        )}
+        {recommendation && recommendation.length > 0 && (
+          <Card className="mt-3">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">추천 등급 분포 (최근)</CardTitle>
+              <CardDescription className="text-xs">{recommendation[0].period}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <RecommendationBar row={recommendation[0]} />
+            </CardContent>
+          </Card>
+        )}
       </section>
 
       {/* ═══ 4-5. Financial metrics + Fundamentals grid ═══ */}
@@ -186,14 +227,42 @@ export default async function StockDetailPage({ params }: PageProps) {
         </Card>
       )}
 
-      {/* ═══ 6. News (placeholder) ═══ */}
-      <Card className="border-amber-500/30 bg-amber-500/5">
+      {/* ═══ 6. News (Finnhub) ═══ */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">📰 최근 뉴스 (준비 중)</CardTitle>
+          <CardTitle className="text-base">📰 최근 뉴스</CardTitle>
+          <CardDescription className="text-xs">
+            Finnhub 최근 14일 · {news?.length ?? 0}건
+          </CardDescription>
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          Streamlit은 Finnhub API로 최근 10개 뉴스를 감정 배지(🟢/🔴/⚪) 및 링크와 함께 표시.
-          뉴스 프록시 도입 후 활성화.
+        <CardContent>
+          {news && news.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {news.slice(0, 10).map((n, i) => (
+                <a
+                  key={i}
+                  href={n.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group rounded-lg border border-border/40 bg-card/40 p-3 transition-colors hover:border-primary/50 hover:bg-primary/5"
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="line-clamp-2 text-sm font-medium group-hover:text-primary">{n.headline}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {new Date(n.datetime * 1000).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                    </span>
+                  </div>
+                  {n.summary && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{n.summary}</p>}
+                  <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>{n.source}</span>
+                    {n.category && <Badge variant="secondary" className="text-[9px]">{n.category}</Badge>}
+                  </div>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">최근 뉴스가 없거나 Finnhub API가 미연결 상태입니다.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -235,9 +304,8 @@ export default async function StockDetailPage({ params }: PageProps) {
       </Card>
 
       <div className="rounded-lg border border-border/40 bg-muted/20 p-3 text-xs text-muted-foreground">
-        <strong className="text-foreground">데이터 한계:</strong> Streamlit의 Stock Detail (1021줄)은 TradingView 임베드,
-        Gemini AI 밸류에이션, Finnhub 애널리스트 컨센서스, SEC Form 4 내부자, 실적 서프라이즈 히스토리, 실시간 뉴스 등
-        여러 외부 API를 조합. 현재 페이지는 캐시 기반 기본 정보 (가격, 펀더멘털)를 표시하고, 나머지는 관련 백엔드 프록시 도입 후 활성화.
+        <strong className="text-foreground">비고:</strong> TradingView 차트 · 애널리스트 컨센서스 · 뉴스는 실데이터.
+        AI 밸류에이션 · 실적 서프라이즈 상세 · SEC Form 4 내부자 거래는 LLM/SEC Form 4 파이프라인 도입 후 활성화 예정.
       </div>
     </div>
   );
@@ -274,31 +342,44 @@ function QuoteCell({ label, value, color }: { label: string; value: string; colo
   );
 }
 
-function ScenarioCard({
-  emoji,
-  name,
-  tone,
-  description,
-  note,
-}: {
-  emoji: string;
-  name: string;
-  tone: "destructive" | "primary" | "success";
-  description: string;
-  note: string;
-}) {
-  const border = tone === "success" ? "border-success/30 bg-success/5" : tone === "destructive" ? "border-destructive/30 bg-destructive/5" : "border-primary/30 bg-primary/5";
-  const text = tone === "success" ? "text-success" : tone === "destructive" ? "text-destructive" : "text-primary";
+function RecommendationBar({ row }: { row: import("@/lib/finnhub").RecommendationRow }) {
+  const total = row.strongBuy + row.buy + row.hold + row.sell + row.strongSell;
+  if (total === 0) return <p className="text-xs text-muted-foreground">-</p>;
+  const segments = [
+    { label: "강력매수", n: row.strongBuy, color: "bg-success" },
+    { label: "매수", n: row.buy, color: "bg-success/60" },
+    { label: "보유", n: row.hold, color: "bg-muted-foreground/40" },
+    { label: "매도", n: row.sell, color: "bg-destructive/60" },
+    { label: "강력매도", n: row.strongSell, color: "bg-destructive" },
+  ];
   return (
-    <Card className={cn("border", border)}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">{emoji}</span>
-          <CardTitle className={cn("text-base", text)}>{name}</CardTitle>
-        </div>
-        <CardDescription className="text-xs">{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="text-[10px] text-muted-foreground">{note}</CardContent>
-    </Card>
+    <div className="flex flex-col gap-2">
+      <div className="flex h-6 w-full overflow-hidden rounded-full">
+        {segments.map(
+          (s) => s.n > 0 && (
+            <div
+              key={s.label}
+              className={cn("relative", s.color)}
+              style={{ width: `${(s.n / total) * 100}%` }}
+              title={`${s.label}: ${s.n}`}
+            >
+              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-background">
+                {s.n}
+              </span>
+            </div>
+          ),
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+        {segments.map((s) => (
+          <span key={s.label} className="flex items-center gap-1">
+            <span className={cn("h-2 w-2 rounded-full", s.color)} />
+            {s.label} ({s.n})
+          </span>
+        ))}
+        <span className="ml-auto font-semibold text-foreground">총 {total}명</span>
+      </div>
+    </div>
   );
 }
+

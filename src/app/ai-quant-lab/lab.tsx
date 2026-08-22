@@ -337,15 +337,14 @@ export function Lab({ presets, presetLoadedInitial, apiUrl }: Props) {
 // ---------- Sub-components ----------
 
 /**
- * Preset loader — 50 presets (10 sectors × 5 strategies) grouped by sector.
- * User picks sector first, then sees all 5 strategy variants ranked by CAGR.
+ * Preset loader — form-style: pick sector + strategy from two dropdowns,
+ * then a compact summary card of the selected preset. Scales past 50
+ * presets without cluttering the screen.
  */
 function PresetLoader({
   presets,
   onLoad,
 }: { presets: BacktestPreset[]; onLoad: (id: string) => void }) {
-  const [selectedSector, setSelectedSector] = useState<string | null>(null);
-
   // Group presets by first sector name
   const groups = new Map<string, BacktestPreset[]>();
   for (const p of presets) {
@@ -354,10 +353,30 @@ function PresetLoader({
     groups.get(sec)!.push(p);
   }
   const sectorNames = Array.from(groups.keys()).sort();
-  const activeSector = selectedSector ?? sectorNames[0];
-  const activePresets = (groups.get(activeSector) ?? []).sort(
+
+  const [sector, setSector] = useState<string>(sectorNames[0] ?? "");
+  const activePresets = (groups.get(sector) ?? []).sort(
     (a, b) => (b.summary.cagr_pct ?? 0) - (a.summary.cagr_pct ?? 0),
   );
+  const [presetId, setPresetId] = useState<string>(activePresets[0]?.preset_id ?? "");
+
+  // Reset preset selection when sector changes
+  function handleSectorChange(next: string) {
+    setSector(next);
+    const first = (groups.get(next) ?? []).sort(
+      (a, b) => (b.summary.cagr_pct ?? 0) - (a.summary.cagr_pct ?? 0),
+    )[0];
+    setPresetId(first?.preset_id ?? "");
+  }
+
+  const selected = activePresets.find((p) => p.preset_id === presetId) ?? activePresets[0];
+  const s = selected?.summary;
+  const cagr = s?.cagr_pct;
+  const cagrColor =
+    cagr === undefined ? "text-muted-foreground"
+      : cagr >= 20 ? "text-success"
+      : cagr >= 0 ? "text-foreground"
+      : "text-destructive";
 
   return (
     <Card>
@@ -370,66 +389,81 @@ function PresetLoader({
           </Badge>
         </div>
         <CardDescription className="text-xs">
-          매일 자동 계산되는 백테스트 결과. 섹터 선택 → 5개 전략 비교.
+          매일 자동 계산되는 백테스트 결과. 섹터 · 전략 선택 → 로드.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {/* Sector picker chips */}
-        <div className="flex flex-wrap gap-1.5">
-          {sectorNames.map((sec) => (
-            <button
-              key={sec}
-              onClick={() => setSelectedSector(sec)}
-              className={
-                "rounded-full border px-2.5 py-1 text-xs transition-colors " +
-                (sec === activeSector
-                  ? "border-primary/60 bg-primary/15 text-primary font-semibold"
-                  : "border-border/40 text-muted-foreground hover:bg-muted/40")
-              }
+        <div className="grid gap-3 sm:grid-cols-[minmax(180px,1fr)_minmax(280px,2fr)]">
+          <div className="min-w-0">
+            <Label className="mb-1 block text-xs text-muted-foreground">섹터</Label>
+            <Select value={sector} onValueChange={(v) => handleSectorChange((v as string) ?? sectorNames[0])}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent className="w-auto! min-w-[var(--anchor-width)]">
+                {sectorNames.map((sec) => (
+                  <SelectItem key={sec} value={sec}>
+                    <span className="whitespace-nowrap">{sec}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-0">
+            <Label className="mb-1 block text-xs text-muted-foreground">
+              전략 (CAGR 정렬, {activePresets.length}개)
+            </Label>
+            <Select
+              value={presetId}
+              onValueChange={(v) => setPresetId((v as string) ?? "")}
+              disabled={activePresets.length === 0}
             >
-              {sec.split(" ").map((w) => w[0]).join("").slice(0, 3)} {" · "}
-              <span className="ml-1 opacity-80">{sec}</span>
-            </button>
-          ))}
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="선택하세요" />
+              </SelectTrigger>
+              <SelectContent className="w-auto! min-w-[var(--anchor-width)] max-w-[min(90vw,520px)]">
+                {activePresets.map((p) => (
+                  <SelectItem key={p.preset_id} value={p.preset_id}>
+                    <span className="whitespace-nowrap">
+                      {p.name}{p.summary.cagr_pct !== undefined ? ` · ${p.summary.cagr_pct.toFixed(1)}%` : ""}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        {/* Strategy cards for the selected sector */}
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {activePresets.map((p) => {
-            const cagr = p.summary.cagr_pct;
-            const cagrColor =
-              cagr === undefined ? "text-muted-foreground"
-                : cagr >= 20 ? "text-success"
-                : cagr >= 0 ? "text-foreground"
-                : "text-destructive";
-            return (
-              <button
-                key={p.preset_id}
-                onClick={() => onLoad(p.preset_id)}
-                className="rounded-lg border border-border/40 p-3 text-left transition-colors hover:border-primary/60 hover:bg-primary/5"
-              >
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-semibold">{p.name}</span>
-                  <span className={`text-xs font-mono tabular-nums ${cagrColor}`}>
-                    {cagr !== undefined ? `${cagr.toFixed(1)}%` : "-"}
-                  </span>
-                </div>
-                <div className="mt-1 line-clamp-1 text-[10px] text-muted-foreground">
-                  {p.description}
-                </div>
-                <div className="mt-1 flex gap-2 text-[10px] text-muted-foreground">
-                  <span>Sharpe {p.summary.sharpe?.toFixed(2) ?? "-"}</span>
-                  <span>MDD {p.summary.max_dd_pct?.toFixed(1) ?? "-"}%</span>
-                </div>
-              </button>
-            );
-          })}
-          {activePresets.length === 0 && (
-            <div className="col-span-full py-6 text-center text-xs text-muted-foreground">
-              이 섹터의 프리셋이 아직 계산되지 않았습니다. Windows 스케줄러 실행 후 확인하세요.
+        {selected ? (
+          <div className="rounded-lg border border-border/40 bg-card/40 p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="text-sm font-semibold">{selected.name}</div>
+              <span className={`text-xs font-mono tabular-nums ${cagrColor}`}>
+                CAGR {cagr !== undefined ? `${cagr.toFixed(1)}%` : "-"}
+              </span>
             </div>
-          )}
-        </div>
+            {selected.description && (
+              <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                {selected.description}
+              </div>
+            )}
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              <span>Sharpe {s?.sharpe?.toFixed(2) ?? "-"}</span>
+              <span>MDD {s?.max_dd_pct?.toFixed(1) ?? "-"}%</span>
+              <span>변동성 {s?.volatility_pct?.toFixed(1) ?? "-"}%</span>
+              <span>승률 {s?.monthly_win_rate_pct?.toFixed(0) ?? "-"}%</span>
+            </div>
+            <Button
+              onClick={() => onLoad(selected.preset_id)}
+              size="sm"
+              className="mt-3 w-full gap-1.5"
+            >
+              <Play className="h-3.5 w-3.5" /> 이 프리셋 로드
+            </Button>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border/40 p-4 text-center text-xs text-muted-foreground">
+            이 섹터의 프리셋이 아직 계산되지 않았습니다.
+          </div>
+        )}
       </CardContent>
     </Card>
   );

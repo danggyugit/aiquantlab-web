@@ -1,4 +1,5 @@
 import { getMarketSnapshot } from "@/lib/data";
+import { getMarketNews } from "@/lib/finnhub";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,7 +37,10 @@ function vixToSentiment(vix: number): {
 }
 
 export default async function SentimentPage() {
-  const s = await getMarketSnapshot();
+  const [s, marketNews] = await Promise.all([
+    getMarketSnapshot(),
+    getMarketNews("general"),
+  ]);
   const sentiment = vixToSentiment(s.vix.current);
   const vixHistory = s.vix.history.map((h) => ({ date: h.date.slice(5), close: h.close }));
 
@@ -208,26 +212,53 @@ export default async function SentimentPage() {
           </TabsList>
 
           <TabsContent value="market" className="mt-4">
-            <Card className="border-amber-500/30 bg-amber-500/5">
+            <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Finnhub News Feed</CardTitle>
+                <CardTitle className="text-sm">Finnhub Market News</CardTitle>
+                <CardDescription className="text-xs">
+                  {marketNews?.length ?? 0}건 · 실시간 시장 헤드라인
+                </CardDescription>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                Streamlit 원본은 워드클라우드 + 20개 기사 (감정 배지)를 표시합니다.
-                뉴스 API 프록시가 필요해서 다음 단계에서 구현됩니다.
+              <CardContent>
+                {marketNews && marketNews.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {marketNews.slice(0, 20).map((n, i) => (
+                      <a
+                        key={i}
+                        href={n.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group rounded-lg border border-border/40 bg-card/40 p-3 transition-colors hover:border-primary/50 hover:bg-primary/5"
+                      >
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="line-clamp-2 text-sm font-medium group-hover:text-primary">{n.headline}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {new Date(n.datetime * 1000).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                          </span>
+                        </div>
+                        {n.summary && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{n.summary}</p>}
+                        <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <span>{n.source}</span>
+                          {n.category && <Badge variant="secondary" className="text-[9px]">{n.category}</Badge>}
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Finnhub API가 미연결 상태입니다.</p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="stock" className="mt-4">
-            <Card className="border-amber-500/30 bg-amber-500/5">
+            <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Ticker News</CardTitle>
+                <CardDescription className="text-xs">
+                  종목별 뉴스는 <a href="/stock" className="text-primary hover:underline">종목 상세</a> 페이지에서 확인 가능합니다.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                Streamlit: 종목 검색 → 워드클라우드 + 4개 감정 지표 + 15개 기사.
-                API 통합 후 활성화.
-              </CardContent>
             </Card>
           </TabsContent>
 
