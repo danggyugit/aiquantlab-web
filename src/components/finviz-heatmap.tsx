@@ -122,11 +122,12 @@ function layoutSector(
 export function FinvizHeatmap({
   data,
   height = 640,
-  onTickerHref,
+  linkPrefix = "/stock/",
 }: {
   data: FinvizTicker[];
   height?: number;
-  onTickerHref?: (ticker: string) => string;
+  /** Prefix appended with ticker to build the click destination. Empty string disables links. */
+  linkPrefix?: string;
 }) {
   const groups: SectorGroup[] = useMemo(() => {
     const map = new Map<string, SectorGroup>();
@@ -216,9 +217,8 @@ export function FinvizHeatmap({
                       )}
                     </div>
                   );
-                  const href = onTickerHref?.(b.ticker);
-                  return href ? (
-                    <Link key={b.ticker} href={href}>
+                  return linkPrefix ? (
+                    <Link key={b.ticker} href={`${linkPrefix}${b.ticker}`}>
                       {cell}
                     </Link>
                   ) : (

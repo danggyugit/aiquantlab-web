@@ -147,7 +147,7 @@ export default async function HeatmapPage() {
       {/* ═══ 4. Finviz-style Heatmap ═══ */}
       <section>
         <h2 className="mb-3 text-lg font-semibold">Market Heatmap</h2>
-        <FinvizHeatmap data={nodes} height={720} onTickerHref={(t) => `/stock/${t}`} />
+        <FinvizHeatmap data={nodes} height={720} />
         <p className="mt-2 text-[10px] text-muted-foreground">
           섹터별 그룹 · 박스 크기 = 시가총액 · 색상 = 전일 대비 등락 · 상위 300 종목 · 클릭 시 상세 이동
         </p>
