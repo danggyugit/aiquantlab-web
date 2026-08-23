@@ -39,9 +39,27 @@ export type VixData = {
 export type Sector = {
   ticker: string;
   sector: string;
+  ret_1d_pct?: number | null;
   ret_1w_pct: number;
   ret_1m_pct: number;
+  ret_3m_pct?: number | null;
+  ret_6m_pct?: number | null;
+  ret_ytd_pct?: number | null;
+  ret_1y_pct?: number | null;
 };
+
+/** Precomputed per-period % change for a ticker (from heatmap.json). */
+export type TickerReturns = {
+  "1d"?: number | null;
+  "1w"?: number | null;
+  "1m"?: number | null;
+  "3m"?: number | null;
+  "6m"?: number | null;
+  ytd?: number | null;
+  "1y"?: number | null;
+};
+
+export type HeatmapPeriod = "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y";
 
 export type Commodity = {
   label: string;
@@ -90,6 +108,8 @@ export type HeatmapTicker = {
   sector: string;
   market_cap: number;
   prices: HeatmapPricePoint[];
+  /** Precomputed per-period % change (backend fetch_cache.py fills this). */
+  returns?: TickerReturns | null;
 };
 
 export type HeatmapData = {

@@ -15,7 +15,7 @@ import { getHeatmap, getMarketSnapshot, latestQuote } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FinvizHeatmap, type FinvizTicker } from "@/components/finviz-heatmap";
+import { HeatmapWithControls } from "@/components/heatmap-with-controls";
 import { IndexMiniChart } from "@/components/index-mini-chart";
 import { cn } from "@/lib/utils";
 
@@ -77,19 +77,15 @@ export default async function Home() {
     },
   ];
 
-  // Top 200 by market cap grouped by sector — matches Finviz layout density.
-  const heatmapNodes: FinvizTicker[] = Object.entries(heatmap.tickers)
-    .map(([ticker, data]) => {
-      const q = latestQuote(data);
-      if (!q || !data.sector || !data.market_cap) return null;
-      return {
-        ticker,
-        sector: data.sector,
-        marketCap: data.market_cap,
-        changePct: q.changePct,
-      } satisfies FinvizTicker;
-    })
-    .filter((x): x is FinvizTicker => x !== null)
+  // Top 200 by market cap for the home heatmap (period selector uses backend returns)
+  const heatmapNodes = Object.entries(heatmap.tickers)
+    .filter(([, data]) => data.sector && data.market_cap && data.returns)
+    .map(([ticker, data]) => ({
+      ticker,
+      sector: data.sector,
+      marketCap: data.market_cap,
+      returns: (data.returns ?? {}) as Record<string, number | null | undefined>,
+    }))
     .sort((a, b) => b.marketCap - a.marketCap)
     .slice(0, 200);
 
@@ -146,7 +142,7 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Heatmap */}
+      {/* Heatmap (period-toggleable · sector strip + treemap) */}
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Market Heatmap</h2>
@@ -154,10 +150,11 @@ export default async function Home() {
             상세 보기 <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
-        <FinvizHeatmap data={heatmapNodes} height={720} />
-        <p className="mt-2 text-[10px] text-muted-foreground">
-          섹터별 그룹 · 박스 크기 = 시가총액 · 색상 = 전일 대비 · 상위 200 종목 · 클릭 시 상세 이동
-        </p>
+        <HeatmapWithControls
+          tickers={heatmapNodes}
+          sectors={snapshot.sectors}
+          heatmapHeight={620}
+        />
       </section>
 
       {/* Backtest CTA (flagship) */}

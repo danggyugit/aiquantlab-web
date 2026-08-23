@@ -2,8 +2,7 @@ import Link from "next/link";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { getHeatmap, getMarketSnapshot, latestQuote, fmtMarketCap } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
-import { SectorStrip } from "@/components/sector-strip";
-import { FinvizHeatmap, type FinvizTicker } from "@/components/finviz-heatmap";
+import { HeatmapWithControls } from "@/components/heatmap-with-controls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -25,7 +24,7 @@ export default async function HeatmapPage() {
     getHeatmap(),
   ]);
 
-  // Compute enriched ticker rows
+  // Compute enriched ticker rows (used for Sector Summary + Top Movers cards)
   const enriched = Object.entries(heatmap.tickers)
     .map(([ticker, data]) => {
       const q = latestQuote(data);
@@ -41,17 +40,17 @@ export default async function HeatmapPage() {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // Section 3: Finviz-style heatmap (top-500 by market cap for the standalone page)
-  const nodes: FinvizTicker[] = [...enriched]
-    .filter((e) => e.sector && e.marketCap > 0)
+  // Ticker inputs for the interactive heatmap (top 500 by market cap, with returns)
+  const tickerInputs = Object.entries(heatmap.tickers)
+    .filter(([, data]) => data.sector && data.market_cap && data.returns)
+    .map(([ticker, data]) => ({
+      ticker,
+      sector: data.sector,
+      marketCap: data.market_cap,
+      returns: (data.returns ?? {}) as Record<string, number | null | undefined>,
+    }))
     .sort((a, b) => b.marketCap - a.marketCap)
-    .slice(0, 500)
-    .map((e) => ({
-      ticker: e.ticker,
-      sector: e.sector,
-      marketCap: e.marketCap,
-      changePct: e.changePct,
-    }));
+    .slice(0, 500);
 
   // Section 4: Sector Summary (Streamlit's dataframe)
   const sectorMap = new Map<
@@ -111,47 +110,13 @@ export default async function HeatmapPage() {
         </CardContent>
       </Card>
 
-      {/* ═══ 2. Period + View Mode (visual only — Streamlit's selectbox/radio) ═══ */}
-      <section className="flex flex-wrap items-center gap-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Period
-        </span>
-        <div className="flex gap-1">
-          {["1d", "1w", "1m", "3m", "ytd", "1y"].map((p) => (
-            <button
-              key={p}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                p === "1d"
-                  ? "border-primary/60 bg-primary/15 text-primary"
-                  : "border-border/40 text-muted-foreground",
-              )}
-              title="캐시 확장 후 활성화 예정"
-              disabled={p !== "1d"}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-        <span className="ml-auto text-[10px] text-muted-foreground">
-          현재는 전일 대비(1d)만 지원
-        </span>
-      </section>
-
-      {/* ═══ 3. Sector Performance strip (기존 유지) ═══ */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Sector Performance</h2>
-        <SectorStrip sectors={snapshot.sectors} />
-      </section>
-
-      {/* ═══ 4. Finviz-style Heatmap ═══ */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Market Heatmap</h2>
-        <FinvizHeatmap data={nodes} height={900} />
-        <p className="mt-2 text-[10px] text-muted-foreground">
-          섹터별 그룹 · 박스 크기 = 시가총액 · 색상 = 전일 대비 등락 · 상위 300 종목 · 클릭 시 상세 이동
-        </p>
-      </section>
+      {/* ═══ 2. Period selector + Sector Performance + Market Heatmap (all together) ═══ */}
+      <HeatmapWithControls
+        tickers={tickerInputs}
+        sectors={snapshot.sectors}
+        heatmapHeight={900}
+        defaultPeriod="1d"
+      />
 
       {/* ═══ 5. Sector Summary (Streamlit's dataframe) ═══ */}
       <section>
