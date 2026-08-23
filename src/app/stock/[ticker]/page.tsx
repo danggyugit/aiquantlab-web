@@ -27,6 +27,7 @@ import {
   GrowthMarginsCard,
 } from "./fundamentals-deep";
 import { DividendHistoryCard, EpsRevisionCard } from "./dividend-eps";
+import { PeerComparisonCard } from "./peer-compare";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -326,6 +327,16 @@ export default async function StockDetailPage({ params }: PageProps) {
 
       {/* ═══ 12. 고급 밸류에이션 (Tier 2 #14) — PEG · EV/EBITDA · P/FCF ═══ */}
       {metric && <AdvancedValuationCard metric={metric} />}
+
+      {/* ═══ 13. 경쟁사 비교 (Tier 1 #5) — 동종 산업 상위 5개 ═══ */}
+      <PeerComparisonCard
+        ticker={ticker}
+        meta={meta}
+        stocks={stocks}
+        heatmapTickers={heatmap.tickers}
+        fundamentalsTickers={fund.tickers}
+        n={5}
+      />
 
       {/* ═══ 13. 펀더멘털 상세 (접이식 · 관심자만) ═══ */}
       {fundamentals && (
