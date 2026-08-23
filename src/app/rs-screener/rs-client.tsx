@@ -33,6 +33,12 @@ export type RsRow = {
   ex3m: number | null;
   ex6m: number | null;
   ex12m: number | null;
+  /**
+   * 12-1M excess: Jegadeesh-Titman academic momentum — 12M return minus the
+   * most recent 1M (which has a reversal tendency). See screener/page.tsx
+   * for the derivation from ex12m and ex1m.
+   */
+  ex12_1m: number | null;
   // Percentile rank (1-99) of the 3M excess return across the whole universe.
   rsRating: number;
 };
@@ -158,7 +164,7 @@ export function classifyPattern(
 
 // ── Component ──────────────────────────────────────────────────
 
-type SortKey = "ex3m" | "ex1m" | "ex6m" | "ex12m" | "rsRating";
+type SortKey = "ex3m" | "ex1m" | "ex6m" | "ex12m" | "ex12_1m" | "rsRating";
 
 export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }) {
   const [sector, setSector] = useState("All");
@@ -286,6 +292,7 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                 <li>• <strong className="text-foreground">1M ↓ + 3M ↑ + 6M ↑</strong> (Losing Leader): 조정 vs 이탈 판별이 어려움 — <strong>3M이 꺾이면 매도</strong>, 살아있으면 매수 후보</li>
                 <li>• <strong className="text-foreground">1M ↑ + 3M ↓ + 6M ↓</strong> (Dead-cat): 함정 확률 높음, 3M/6M 양전환 전 신규 진입 지양</li>
                 <li>• <strong className="text-foreground">RS Rating</strong>은 3M excess return의 백분위 (1-99). 90+ = 상위 10%.</li>
+                <li>• <strong className="text-foreground">12-1M ex</strong>는 학술 표준 Jegadeesh-Titman 모멘텀 (12개월 수익률에서 최근 1개월 제외) · SPY 대비. 최근 1개월의 <strong>단기 평균회귀(reversal)</strong> 효과를 배제한 순수 중기 추세 → 정통 CANSLIM / 학술 모멘텀 스크리닝에 사용. 12M ex와 12-1M ex의 차이가 크면 최근 1개월이 그만큼 이례적이라는 뜻.</li>
               </ul>
             </div>
           </CardContent>
@@ -409,7 +416,7 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
             <CardTitle className="text-sm">Results ({sorted.length.toLocaleString()})</CardTitle>
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
               정렬:
-              {(["ex3m", "ex1m", "ex6m", "ex12m", "rsRating"] as SortKey[]).map((k) => (
+              {(["ex3m", "ex1m", "ex6m", "ex12m", "ex12_1m", "rsRating"] as SortKey[]).map((k) => (
                 <button
                   key={k}
                   onClick={() => setSortKey(k)}
@@ -417,8 +424,9 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                     "rounded px-1.5 py-0.5",
                     sortKey === k ? "bg-primary/15 text-primary font-semibold" : "hover:bg-muted/40",
                   )}
+                  title={k === "ex12_1m" ? "12개월 수익률에서 최근 1개월 제외 (Jegadeesh-Titman 학술 모멘텀)" : undefined}
                 >
-                  {k === "rsRating" ? "RS" : k.slice(2).toUpperCase()}
+                  {k === "rsRating" ? "RS" : k === "ex12_1m" ? "12-1M" : k.slice(2).toUpperCase()}
                 </button>
               ))}
             </div>
@@ -438,6 +446,12 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                   <th className="px-3 py-2.5 text-right">3M ex</th>
                   <th className="px-3 py-2.5 text-right hidden sm:table-cell">6M ex</th>
                   <th className="px-3 py-2.5 text-right hidden md:table-cell">12M ex</th>
+                  <th
+                    className="px-3 py-2.5 text-right hidden lg:table-cell"
+                    title="12개월 수익률에서 최근 1개월 제외 (Jegadeesh-Titman 학술 모멘텀 · SPY 대비)"
+                  >
+                    12-1M ex
+                  </th>
                   <th className="px-3 py-2.5 text-right w-16">RS</th>
                 </tr>
               </thead>
@@ -468,6 +482,7 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                     <ExCell v={r.ex3m} bold />
                     <ExCell v={r.ex6m} className="hidden sm:table-cell" />
                     <ExCell v={r.ex12m} className="hidden md:table-cell" />
+                    <ExCell v={r.ex12_1m} className="hidden lg:table-cell" />
                     <td className={cn(
                       "px-3 py-2 text-right tabular-nums font-bold text-base w-16",
                       r.rsRating >= 90 ? "text-success" : r.rsRating >= 70 ? "text-foreground" : "text-muted-foreground",
@@ -478,7 +493,7 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    <td colSpan={11} className="px-3 py-8 text-center text-sm text-muted-foreground">
                       필터 조건에 맞는 종목이 없습니다.
                     </td>
                   </tr>

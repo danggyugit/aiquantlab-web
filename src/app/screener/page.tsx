@@ -74,6 +74,17 @@ export default async function ScreenerPage() {
     "1y":  typeof spyRet["1y"] === "number" ? spyRet["1y"] : 0,
   };
 
+  // Derive 12-1M raw return from 12M and 1M returns (compounding identity):
+  //   (1 + r_12m) / (1 + r_1m) - 1  ==  P[t-21] / P[t-252] - 1  (exact)
+  // Same trick applied to SPY so we can also take excess-vs-SPY on 12-1M.
+  function twelveMinusOne(r12m: number | null, r1m: number | null): number | null {
+    if (r12m === null || r1m === null) return null;
+    const denom = 1 + r1m / 100;
+    if (denom === 0) return null;
+    return ((1 + r12m / 100) / denom - 1) * 100;
+  }
+  const spy12_1m = twelveMinusOne(spy["1y"], spy["1m"]) ?? 0;
+
   const rsRaw = Object.entries(heatmap.tickers)
     .map(([ticker, data]) => {
       const meta = stocksMap.get(ticker);
@@ -83,6 +94,10 @@ export default async function ScreenerPage() {
         const v = r[period];
         return typeof v === "number" ? v - spy[period] : null;
       };
+      const r1m = typeof r["1m"] === "number" ? r["1m"] : null;
+      const r12m = typeof r["1y"] === "number" ? r["1y"] : null;
+      const stock12_1m = twelveMinusOne(r12m, r1m);
+      const ex12_1m = stock12_1m !== null ? stock12_1m - spy12_1m : null;
       return {
         ticker,
         name: data.name,
@@ -92,6 +107,7 @@ export default async function ScreenerPage() {
         ex3m: excess("3m"),
         ex6m: excess("6m"),
         ex12m: excess("1y"),
+        ex12_1m,
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -111,6 +127,7 @@ export default async function ScreenerPage() {
     ex3m: r.ex3m,
     ex6m: r.ex6m,
     ex12m: r.ex12m,
+    ex12_1m: r.ex12_1m,
     rsRating: rsRankMap.get(r.ticker) ?? 50,
   }));
 
