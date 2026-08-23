@@ -17,6 +17,7 @@ import {
   Activity,
   BookOpen,
   Calendar,
+  Compass,
   FlaskConical,
   FolderKanban,
   GitCompareArrows,
@@ -63,6 +64,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Stock Research",
     items: [
+      { href: "/top-down", label: "Top-Down 분석", icon: Compass, premium: true },
       { href: "/stock", label: "종목 상세", icon: LineChart },
       { href: "/compare", label: "종목 비교", icon: GitCompareArrows },
       { href: "/screener", label: "스크리너", icon: ScanSearch },
