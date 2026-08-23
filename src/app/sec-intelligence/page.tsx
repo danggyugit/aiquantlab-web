@@ -36,20 +36,31 @@ export default async function SecIntelligencePage() {
     await Promise.all(entries.map(async (e) => ({ ...e, filing: await tryFiling(e.cik, e.period) })))
   ).filter((x): x is typeof x & { filing: Filing13F } => x.filing !== null);
 
-  // Aggregate consensus: how many managers hold each ticker?
-  const tickerCount = new Map<string, { count: number; managers: string[]; totalValue: number }>();
+  // Aggregate consensus: how many UNIQUE managers hold each ticker?
+  // A single 13F can list the same ticker multiple times (different share
+  // classes / accounts) — dedupe by manager name so "Buffett" doesn't
+  // appear 3× just because Berkshire filed 3 lots of AAPL.
+  const tickerAgg = new Map<string, { managers: Set<string>; totalValue: number }>();
   for (const f of filings) {
+    const mgr = f.filing.manager || f.filing.name;
     for (const h of f.filing.holdings) {
       if (!h.ticker) continue;
-      const cur = tickerCount.get(h.ticker) ?? { count: 0, managers: [], totalValue: 0 };
-      cur.count += 1;
-      cur.managers.push(f.filing.manager || f.filing.name);
-      cur.totalValue += h.value_usd ?? 0;
-      tickerCount.set(h.ticker, cur);
+      let cur = tickerAgg.get(h.ticker);
+      if (!cur) {
+        cur = { managers: new Set<string>(), totalValue: 0 };
+        tickerAgg.set(h.ticker, cur);
+      }
+      cur.managers.add(mgr);
+      cur.totalValue += h.value_usd ?? 0;  // total exposure across all lots
     }
   }
-  const consensus = Array.from(tickerCount.entries())
-    .map(([ticker, v]) => ({ ticker, ...v }))
+  const consensus = Array.from(tickerAgg.entries())
+    .map(([ticker, v]) => ({
+      ticker,
+      count: v.managers.size,
+      managers: Array.from(v.managers),
+      totalValue: v.totalValue,
+    }))
     .sort((a, b) => b.count - a.count || b.totalValue - a.totalValue)
     .slice(0, 20);
 
