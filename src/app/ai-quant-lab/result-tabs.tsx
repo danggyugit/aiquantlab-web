@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { BacktestPreset, ForwardEval, ForwardSnapshot } from "@/lib/data";
+import type {
+  BacktestPreset, ForwardEval, ForwardSnapshot,
+  RotationEval, RotationVariant, RotationTodaySectorEntry,
+} from "@/lib/data";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +20,9 @@ import { AlertCircle } from "lucide-react";
 // server-side fetcher (which uses Next fetch cache).
 const FORWARD_EVAL_URL = (presetId: string) =>
   `https://raw.githubusercontent.com/danggyugit/stock-dashboard/main/streamlit_app/data/cache/forward_test/eval_${presetId}.json`;
+
+const ROTATION_EVAL_URL = (strategy: string) =>
+  `https://raw.githubusercontent.com/danggyugit/stock-dashboard/main/streamlit_app/data/cache/rotation/eval_${strategy}.json`;
 
 // Mirrors Streamlit's 8-tab result panel + "Live 검증" for the out-of-sample
 // forward evaluator written by scripts/compute_forward_returns.py.
@@ -59,6 +65,35 @@ export function ResultTabs({
     };
   }, [preset.preset_id]);
 
+  // Lazy fetch of the strategy's rotation eval. Uses the current preset's
+  // strategy key (last "_" segment of preset_id) — e.g. "it_momentum" →
+  // "momentum". Cross-sector presets share the same strategy space so
+  // they get the same rotation eval, which is the natural comparison.
+  const strategyKey = preset.preset_id.split("_").pop() ?? "";
+  const [rotationEval, setRotationEval] = useState<RotationEval | null>(null);
+  const [rotationState, setRotationState] = useState<"idle" | "loading" | "empty" | "ready">("idle");
+  useEffect(() => {
+    if (!strategyKey) return;
+    let cancelled = false;
+    setRotationState("loading");
+    setRotationEval(null);
+    fetch(ROTATION_EVAL_URL(strategyKey), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: RotationEval | null) => {
+        if (cancelled) return;
+        if (data && data.variants) {
+          setRotationEval(data);
+          setRotationState("ready");
+        } else {
+          setRotationState("empty");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRotationState("empty");
+      });
+    return () => { cancelled = true; };
+  }, [strategyKey]);
+
   return (
     <div className="flex flex-col gap-4">
       {source === "api" && (
@@ -90,6 +125,14 @@ export function ResultTabs({
             {forwardState === "ready" && forwardEval && (
               <span className="ml-1 text-[10px] opacity-70">
                 ({(forwardEval.windows["21d"]?.series?.length ?? 0)})
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="rotation" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            섹터 로테이션
+            {rotationState === "ready" && rotationEval && (
+              <span className="ml-1 text-[10px] opacity-70">
+                ({Object.keys(rotationEval.variants).length})
               </span>
             )}
           </TabsTrigger>
@@ -372,6 +415,17 @@ export function ResultTabs({
         {/* --- Tab 9: Live 검증 (out-of-sample forward test) --- */}
         <TabsContent value="forward" className="mt-4 flex flex-col gap-4">
           <ForwardTestPanel state={forwardState} evalData={forwardEval} />
+        </TabsContent>
+
+        {/* --- Tab 10: 섹터 로테이션 (two-stage rotation) --- */}
+        <TabsContent value="rotation" className="mt-4 flex flex-col gap-4">
+          <RotationPanel
+            state={rotationState}
+            evalData={rotationEval}
+            baseCagr={s.cagr_pct}
+            baseSharpe={s.sharpe}
+            baseMdd={s.max_dd_pct}
+          />
         </TabsContent>
 
         {/* --- Tab 8: Tracking --- */}
@@ -974,4 +1028,239 @@ function numTone(v: number | null | undefined): string {
 
 function fmtRet(v: number): string {
   return `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
+}
+
+// ---------- 섹터 로테이션 ----------
+
+const RULE_LABEL: Record<string, string> = {
+  mom_1m: "1M 모멘텀",
+  mom_3m: "3M 모멘텀",
+  conf: "모델 신뢰도",
+};
+
+function RotationPanel({
+  state,
+  evalData,
+  baseCagr,
+  baseSharpe,
+  baseMdd,
+}: {
+  state: "idle" | "loading" | "empty" | "ready";
+  evalData: RotationEval | null;
+  baseCagr: number | undefined;
+  baseSharpe: number | undefined;
+  baseMdd: number | undefined;
+}) {
+  if (state === "loading" || state === "idle") {
+    return (
+      <Card>
+        <CardContent className="py-6 text-center text-sm text-muted-foreground">
+          로테이션 데이터 로딩 중...
+        </CardContent>
+      </Card>
+    );
+  }
+  if (state === "empty" || !evalData) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">🔄 섹터 로테이션 (준비 중)</CardTitle>
+          <CardDescription className="text-xs">
+            10개 섹터의 프리셋 결과를 매일 후처리하여 &ldquo;이 전략을 섹터 고정 대신 로테이션으로 돌리면?&rdquo;을 계산.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border border-dashed border-border/50 p-4 text-center text-xs text-muted-foreground">
+            <div className="text-2xl">🔄</div>
+            <div className="mt-2 font-semibold text-foreground">아직 이 전략의 로테이션 결과 없음</div>
+            <div className="mt-1">
+              rotation_backtest.py는 3개 이상 섹터 프리셋의 데이터가 필요합니다.
+              매일 10:30 KST에 자동 실행되어 결과가 채워집니다.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Sort variants by CAGR desc for the leaderboard
+  const rows = Object.entries(evalData.variants)
+    .map(([key, v]) => ({ key, ...v.summary, port_dates: v.port_dates, port_values: v.port_values }))
+    .sort((a, b) => (b.cagr_pct ?? 0) - (a.cagr_pct ?? 0));
+
+  const best = rows[0];
+
+  return (
+    <>
+      {/* Header + today's live recommendation */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <CardTitle className="text-base">🔄 섹터 로테이션 · {evalData.strategy}</CardTitle>
+            <Badge variant="secondary" className="text-[10px]">
+              {evalData.sectors_included.length}개 섹터 · {evalData.n_common_dates}회 리밸런싱
+            </Badge>
+          </div>
+          <CardDescription className="text-xs">
+            섹터 고정 프리셋 대신, 매 리밸런싱마다 룰로 좋은 섹터를 선정하고 그 섹터의 기존 픽을 사용하는 시뮬레이션.
+            데이터: {evalData.date_range[0]} ~ {evalData.date_range[1]}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <TodayRotationBlock reco={evalData.today_recommendation} />
+        </CardContent>
+      </Card>
+
+      {/* Variant leaderboard vs current preset baseline */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">전체 로테이션 조합 (CAGR 정렬)</CardTitle>
+          <CardDescription className="text-xs">
+            같은 전략을 섹터 고정으로 돌린 이 프리셋 대비. 초록 = 상회, 빨강 = 열위.
+          </CardDescription>
+        </CardHeader>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="border-b border-border/60 bg-muted/20 text-left text-[10px] text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">룰 / K</th>
+                <th className="px-3 py-2 text-right">CAGR</th>
+                <th className="px-3 py-2 text-right">Sharpe</th>
+                <th className="px-3 py-2 text-right">MDD</th>
+                <th className="px-3 py-2 text-right hidden sm:table-cell">Alpha</th>
+                <th className="px-3 py-2 text-right hidden md:table-cell">월승률</th>
+                <th className="px-3 py-2 text-right hidden md:table-cell">리밸런싱</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const cagrTone = baseCagr !== undefined && r.cagr_pct !== undefined
+                  ? (r.cagr_pct > baseCagr ? "text-success" : r.cagr_pct < baseCagr ? "text-destructive" : "text-foreground")
+                  : "text-foreground";
+                const sharpeTone = baseSharpe !== undefined && r.sharpe !== undefined
+                  ? (r.sharpe > baseSharpe ? "text-success" : r.sharpe < baseSharpe ? "text-destructive" : "text-foreground")
+                  : "text-foreground";
+                const mddTone = baseMdd !== undefined && r.max_dd_pct !== undefined
+                  ? (r.max_dd_pct > baseMdd ? "text-success" : r.max_dd_pct < baseMdd ? "text-destructive" : "text-foreground")
+                  : "text-foreground";
+                const [rule, topPart] = r.key.split(/_(?=top\d+$)/);
+                const label = `${RULE_LABEL[rule] ?? rule} · ${topPart}`;
+                return (
+                  <tr key={r.key} className="border-b border-border/30">
+                    <td className="px-3 py-2 font-mono text-[11px]">{label}</td>
+                    <td className={cn("px-3 py-2 text-right tabular-nums font-semibold", cagrTone)}>
+                      {fmtPct(r.cagr_pct)}
+                    </td>
+                    <td className={cn("px-3 py-2 text-right tabular-nums", sharpeTone)}>
+                      {r.sharpe?.toFixed(2) ?? "-"}
+                    </td>
+                    <td className={cn("px-3 py-2 text-right tabular-nums", mddTone)}>
+                      {fmtPct(r.max_dd_pct)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">
+                      {fmtPct(r.alpha_annual_pct)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">
+                      {fmtPct(r.monthly_win_rate_pct)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">
+                      {r.n_rebalances}회
+                    </td>
+                  </tr>
+                );
+              })}
+              {baseCagr !== undefined && (
+                <tr className="border-t-2 border-border/60 bg-muted/10">
+                  <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                    현재 프리셋 (섹터 고정)
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                    {fmtPct(baseCagr)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {baseSharpe?.toFixed(2) ?? "-"}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtPct(baseMdd)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell text-muted-foreground">—</td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">—</td>
+                  <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">—</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Equity curve of best variant */}
+      {best && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              최고 조합 equity curve: {RULE_LABEL[best.key.split(/_(?=top\d+$)/)[0]] ?? best.key.split(/_(?=top\d+$)/)[0]} · {best.key.split(/_(?=top\d+$)/)[1]}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              CAGR {fmtPct(best.cagr_pct)} · Sharpe {best.sharpe?.toFixed(2)} · MDD {fmtPct(best.max_dd_pct)}
+              {evalData.benchmark_series && " · SPY 오버레이"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EquityCurve
+              dates={best.port_dates}
+              values={best.port_values}
+              benchmark={evalData.benchmark_series}
+            />
+          </CardContent>
+        </Card>
+      )}
+    </>
+  );
+}
+
+function TodayRotationBlock({ reco }: { reco: Record<string, RotationTodaySectorEntry[]> }) {
+  const rules = Object.keys(reco);
+  if (rules.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground">오늘의 추천 데이터가 없습니다.</div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        오늘의 룰별 상위 섹터 (top-3)
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {rules.map((rule) => {
+          const ranked = (reco[rule] || []).slice(0, 3);
+          return (
+            <div key={rule} className="rounded-lg border border-border/40 bg-card/40 p-2.5">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[11px] font-semibold">{RULE_LABEL[rule] ?? rule}</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                {ranked.map((r, i) => (
+                  <div key={r.sector} className="text-[11px]">
+                    <div className="flex items-baseline justify-between">
+                      <span className={cn("font-mono", i === 0 ? "font-bold text-primary" : "text-muted-foreground")}>
+                        {i + 1}. {r.sector.toUpperCase()}
+                      </span>
+                      <span className="tabular-nums text-[10px] text-muted-foreground">
+                        {r.score !== null && r.score !== undefined ? r.score.toFixed(3) : "-"}
+                      </span>
+                    </div>
+                    {r.today_picks && r.today_picks.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground font-mono">
+                        {r.today_picks.slice(0, 5).join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

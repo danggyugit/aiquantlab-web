@@ -11,7 +11,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { getHeatmap, getMarketSnapshot, latestQuote } from "@/lib/data";
+import { getHeatmap, getMarketSnapshot, getRotationEval, latestQuote } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,11 @@ const FEATURES = [
  *  4. Feature grid → 6 CTAs
  */
 export default async function Home() {
-  const [snapshot, heatmap] = await Promise.all([getMarketSnapshot(), getHeatmap()]);
+  const [snapshot, heatmap, rotation] = await Promise.all([
+    getMarketSnapshot(),
+    getHeatmap(),
+    getRotationEval("ensemble"),
+  ]);
 
   // Build indices from snapshot history (added by fetch_cache.build_market_snapshot).
   // Each `hist` is a 90-day array of {date, close} — mini charts consume the last 30.
@@ -177,6 +181,9 @@ export default async function Home() {
           showIndustryTable={false}
         />
       </section>
+
+      {/* Today's sector rotation recommendation */}
+      {rotation && <RotationBadge rotation={rotation} />}
 
       {/* Backtest CTA (flagship) */}
       <section>
@@ -316,5 +323,100 @@ function MetricTile({
         {changePct.toFixed(2)}%
       </div>
     </div>
+  );
+}
+
+// Sector map for user-facing labels — mirrors BACKTEST_SECTORS keys.
+const SECTOR_LABEL: Record<string, string> = {
+  it: "IT", hc: "Health Care", fin: "Financials", cd: "Consumer Disc.",
+  cs: "Comm. Services", ind: "Industrials", staples: "Consumer Stap.",
+  en: "Energy", mat: "Materials", re: "Real Estate",
+};
+
+const ROTATION_RULE_LABEL: Record<string, string> = {
+  mom_1m: "1M 모멘텀",
+  mom_3m: "3M 모멘텀",
+  conf: "모델 신뢰도",
+};
+
+function RotationBadge({
+  rotation,
+}: {
+  rotation: import("@/lib/data").RotationEval;
+}) {
+  // Rank rules by their best-performing top1 variant's CAGR so the "best rule"
+  // shown to users matches what the AI Lab tab surfaces as the leaderboard top.
+  const bestRule =
+    Object.entries(rotation.variants)
+      .filter(([k]) => k.endsWith("_top1"))
+      .sort(([, a], [, b]) => (b.summary.cagr_pct ?? 0) - (a.summary.cagr_pct ?? 0))[0]?.[0]
+      ?.replace(/_top1$/, "");
+
+  const rules = Object.keys(rotation.today_recommendation);
+  if (rules.length === 0) return null;
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">🔄 오늘의 섹터 로테이션 추천</h2>
+        <Link href="/backtest" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+          백테스트로 검증 <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        10개 섹터의 앙상블 프리셋 결과를 3가지 룰로 후처리 · 매일 10:30 KST 자동 갱신
+      </p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {rules.map((rule) => {
+          const ranked = rotation.today_recommendation[rule].slice(0, 3);
+          const isBest = rule === bestRule;
+          return (
+            <Card
+              key={rule}
+              className={cn(
+                "transition-colors",
+                isBest && "border-primary/50 bg-primary/[0.04]",
+              )}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">{ROTATION_RULE_LABEL[rule] ?? rule}</CardTitle>
+                  {isBest && (
+                    <Badge variant="secondary" className="bg-primary/15 text-primary text-[10px]">
+                      최고 CAGR
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                {ranked.map((r, i) => (
+                  <div
+                    key={r.sector}
+                    className={cn(
+                      "rounded-md border border-border/30 px-2 py-1.5",
+                      i === 0 && "border-primary/40 bg-primary/5",
+                    )}
+                  >
+                    <div className="flex items-baseline justify-between">
+                      <span className={cn("text-xs font-semibold", i === 0 ? "text-primary" : "text-foreground")}>
+                        {i + 1}. {SECTOR_LABEL[r.sector] ?? r.sector.toUpperCase()}
+                      </span>
+                      <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
+                        {r.score !== null && r.score !== undefined ? r.score.toFixed(3) : "-"}
+                      </span>
+                    </div>
+                    {r.today_picks && r.today_picks.length > 0 && (
+                      <div className="mt-0.5 text-[10px] text-muted-foreground font-mono">
+                        {r.today_picks.slice(0, 5).join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </section>
   );
 }

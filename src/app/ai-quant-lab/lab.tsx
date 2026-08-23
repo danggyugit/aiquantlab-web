@@ -354,14 +354,23 @@ function PresetLoader({
   presets,
   onLoad,
 }: { presets: BacktestPreset[]; onLoad: (id: string) => void }) {
-  // Group presets by first sector name
+  // Group presets by sector. Cross-sector presets (preset_id starts with
+  // "all_") span all 10 sectors, so they're bucketed separately instead
+  // of leaking into whichever sector happens to be config.sectors[0].
   const groups = new Map<string, BacktestPreset[]>();
   for (const p of presets) {
-    const sec = p.config.sectors?.[0] ?? "Unknown";
+    const sec = p.preset_id.startsWith("all_")
+      ? "Cross-Sector (전 섹터)"
+      : (p.config.sectors?.[0] ?? "Unknown");
     if (!groups.has(sec)) groups.set(sec, []);
     groups.get(sec)!.push(p);
   }
-  const sectorNames = Array.from(groups.keys()).sort();
+  // Sort alphabetically, but pin "Cross-Sector" to the end.
+  const sectorNames = Array.from(groups.keys()).sort((a, b) => {
+    if (a.startsWith("Cross-Sector")) return 1;
+    if (b.startsWith("Cross-Sector")) return -1;
+    return a.localeCompare(b);
+  });
 
   const [sector, setSector] = useState<string>(sectorNames[0] ?? "");
   const activePresets = (groups.get(sector) ?? []).sort(

@@ -351,6 +351,9 @@ export const BACKTEST_SECTORS = [
   { key: "en",       short: "Energy",         full: "Energy" },
   { key: "mat",      short: "Materials",      full: "Materials" },
   { key: "re",       short: "Real Estate",    full: "Real Estate" },
+  // Cross-sector: universe = all 10 sectors' large caps (~500 tickers),
+  // one big model picks top-N regardless of sector membership.
+  { key: "all",      short: "Cross-Sector",   full: "Cross-Sector (전 섹터)" },
 ] as const;
 
 export const BACKTEST_STRATEGIES = [
@@ -463,6 +466,68 @@ export type ForwardEval = {
 export async function getForwardEval(presetId: string): Promise<ForwardEval | null> {
   try {
     return await fetchCache<ForwardEval>(`forward_test/eval_${presetId}.json`);
+  } catch {
+    return null;
+  }
+}
+
+// ── Two-stage sector rotation eval (written by
+// stock-dashboard/streamlit_app/scripts/rotation_backtest.py). One file
+// per strategy, containing 6 rule×top-k variants.
+
+export type RotationSummary = {
+  n_rebalances?: number;
+  total_return_pct?: number;
+  cagr_pct?: number;
+  sharpe?: number;
+  max_dd_pct?: number;
+  monthly_win_rate_pct?: number;
+  avg_period_return_pct?: number;
+  spy_cagr_pct?: number;
+  alpha_annual_pct?: number;
+};
+
+export type RotationRebalanceEntry = {
+  rebalance_date: string;
+  period_return: number;
+  chosen_sectors: Array<{
+    sector: string;      // e.g. "it", "fin"
+    score: number | null;
+    port_return: number;
+    picks: string[];
+  }>;
+};
+
+export type RotationVariant = {
+  summary: RotationSummary;
+  port_dates: string[];
+  port_values: number[];
+  rebalance_log: RotationRebalanceEntry[];
+};
+
+export type RotationTodaySectorEntry = {
+  sector: string;
+  score: number | null;
+  today_picks: string[];
+  picks_at?: string;
+};
+
+export type RotationEval = {
+  strategy: string;
+  sectors_included: string[];
+  n_common_dates: number;
+  date_range: [string, string];
+  benchmark_series?: BenchmarkPoint[];
+  variants: Record<string, RotationVariant>;   // "mom_1m_top1", "conf_top3", ...
+  today_recommendation: Record<string, RotationTodaySectorEntry[]>;  // rule → ranked
+  updated_at: string;
+};
+
+/** Tolerant fetcher — returns null if rotation for this strategy isn't
+ * computed yet (needs ≥3 sector presets with matching rebalance dates). */
+export async function getRotationEval(strategy: string): Promise<RotationEval | null> {
+  try {
+    return await fetchCache<RotationEval>(`rotation/eval_${strategy}.json`);
   } catch {
     return null;
   }
