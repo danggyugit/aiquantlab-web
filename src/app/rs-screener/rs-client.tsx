@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -172,7 +173,18 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
   const [minRs, setMinRs] = useState(70);
   const [patternFilter, setPatternFilter] = useState<PatternKey | "All">("All");
   const [sortKey, setSortKey] = useState<SortKey>("ex3m");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [showGuide, setShowGuide] = useState(false);
+
+  // Click column header: first click sorts desc, second click on same column flips to asc.
+  function toggleSort(k: SortKey) {
+    if (sortKey === k) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(k);
+      setSortDir("desc");
+    }
+  }
 
   // Attach classified pattern once per row
   const rowsWithPattern = useMemo(() => {
@@ -193,13 +205,14 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
   }, [rowsWithPattern, sector, capTier, minRs, patternFilter]);
 
   const sorted = useMemo(() => {
+    const dir = sortDir === "desc" ? 1 : -1;
     const cmp = (a: (typeof filtered)[number], b: (typeof filtered)[number]) => {
       const av = sortKey === "rsRating" ? a.rsRating : (a[sortKey] ?? -Infinity);
       const bv = sortKey === "rsRating" ? b.rsRating : (b[sortKey] ?? -Infinity);
-      return bv - av;
+      return (bv - av) * dir;
     };
     return [...filtered].sort(cmp);
-  }, [filtered, sortKey]);
+  }, [filtered, sortKey, sortDir]);
 
   // Histogram of RS Rating (3M excess percentile)
   const histogram = useMemo(() => {
@@ -412,23 +425,14 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
       {/* Result table */}
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
             <CardTitle className="text-sm">Results ({sorted.length.toLocaleString()})</CardTitle>
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              정렬:
-              {(["ex3m", "ex1m", "ex6m", "ex12m", "ex12_1m", "rsRating"] as SortKey[]).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setSortKey(k)}
-                  className={cn(
-                    "rounded px-1.5 py-0.5",
-                    sortKey === k ? "bg-primary/15 text-primary font-semibold" : "hover:bg-muted/40",
-                  )}
-                  title={k === "ex12_1m" ? "12개월 수익률에서 최근 1개월 제외 (Jegadeesh-Titman 학술 모멘텀)" : undefined}
-                >
-                  {k === "rsRating" ? "RS" : k === "ex12_1m" ? "12-1M" : k.slice(2).toUpperCase()}
-                </button>
-              ))}
+            <div className="text-[11px] text-muted-foreground">
+              💡 컬럼 헤더 클릭 → 정렬 · 다시 클릭 → 방향 반전 · 현재:{" "}
+              <span className="font-mono font-semibold text-primary">
+                {sortKey === "rsRating" ? "RS" : sortKey === "ex12_1m" ? "12-1M" : sortKey.slice(2).toUpperCase()}
+                {" "}{sortDir === "desc" ? "↓" : "↑"}
+              </span>
             </div>
           </div>
         </CardHeader>
@@ -442,17 +446,20 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                   <th className="px-3 py-2.5 hidden md:table-cell">Name</th>
                   <th className="px-3 py-2.5 hidden sm:table-cell">Sector</th>
                   <th className="px-3 py-2.5">Pattern</th>
-                  <th className="px-3 py-2.5 text-right">1M ex</th>
-                  <th className="px-3 py-2.5 text-right">3M ex</th>
-                  <th className="px-3 py-2.5 text-right hidden sm:table-cell">6M ex</th>
-                  <th className="px-3 py-2.5 text-right hidden md:table-cell">12M ex</th>
-                  <th
-                    className="px-3 py-2.5 text-right hidden lg:table-cell"
+                  <SortHeader label="1M ex" k="ex1m" active={sortKey === "ex1m"} dir={sortDir} onClick={toggleSort} />
+                  <SortHeader label="3M ex" k="ex3m" active={sortKey === "ex3m"} dir={sortDir} onClick={toggleSort} />
+                  <SortHeader label="6M ex" k="ex6m" active={sortKey === "ex6m"} dir={sortDir} onClick={toggleSort} className="hidden sm:table-cell" />
+                  <SortHeader label="12M ex" k="ex12m" active={sortKey === "ex12m"} dir={sortDir} onClick={toggleSort} className="hidden md:table-cell" />
+                  <SortHeader
+                    label="12-1M ex"
+                    k="ex12_1m"
+                    active={sortKey === "ex12_1m"}
+                    dir={sortDir}
+                    onClick={toggleSort}
+                    className="hidden lg:table-cell"
                     title="12개월 수익률에서 최근 1개월 제외 (Jegadeesh-Titman 학술 모멘텀 · SPY 대비)"
-                  >
-                    12-1M ex
-                  </th>
-                  <th className="px-3 py-2.5 text-right w-16">RS</th>
+                  />
+                  <SortHeader label="RS" k="rsRating" active={sortKey === "rsRating"} dir={sortDir} onClick={toggleSort} className="w-16" />
                 </tr>
               </thead>
               <tbody>
@@ -513,6 +520,45 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
 }
 
 // ── Sub-components ─────────────────────────────────────────────
+
+function SortHeader({
+  label,
+  k,
+  active,
+  dir,
+  onClick,
+  className,
+  title,
+}: {
+  label: string;
+  k: SortKey;
+  active: boolean;
+  dir: "desc" | "asc";
+  onClick: (k: SortKey) => void;
+  className?: string;
+  title?: string;
+}) {
+  return (
+    <th
+      className={cn(
+        "px-3 py-2.5 text-right cursor-pointer select-none transition-colors",
+        active ? "bg-primary/10 text-primary" : "hover:bg-muted/40",
+        className,
+      )}
+      onClick={() => onClick(k)}
+      title={title ?? `${label} 정렬 ${active ? (dir === "desc" ? "(↓)" : "(↑)") : ""}`}
+    >
+      <span className="inline-flex items-center gap-0.5">
+        {label}
+        {active ? (
+          dir === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />
+        ) : (
+          <span className="inline-block w-3 opacity-30">↕</span>
+        )}
+      </span>
+    </th>
+  );
+}
 
 function ExCell({
   v,
