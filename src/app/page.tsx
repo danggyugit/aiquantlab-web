@@ -24,7 +24,7 @@ export const revalidate = 900;
 
 const FEATURES = [
   { href: "/heatmap", icon: BarChart3, title: "히트맵", desc: "섹터·시가총액 등락 시각화" },
-  { href: "/screener", icon: ScanSearch, title: "스크리너", desc: "펀더멘털 · RS · 돌파 3종 통합" },
+  { href: "/screener", icon: ScanSearch, title: "스크리너", desc: "RS 모멘텀 · 신고가 돌파 · 펀더멘털 3종 통합" },
   { href: "/backtest", icon: FlaskConical, title: "백테스트", desc: "룰 기반 실행 + AI 앙상블 프리셋", premium: true },
   { href: "/sec-intelligence", icon: Landmark, title: "SEC Intelligence", desc: "13F 헤지펀드 컨센서스" },
   { href: "/stock", icon: LineChart, title: "종목 상세", desc: "리서치 · 재무 · 차트" },

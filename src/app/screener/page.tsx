@@ -206,28 +206,24 @@ export default async function ScreenerPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="secondary" className="text-[11px]">
-            펀더멘털 {fundamentalRows.length.toLocaleString()} · RS {rsRows.length.toLocaleString()} · 돌파 {breakoutRows.length.toLocaleString()}
+            RS {rsRows.length.toLocaleString()} · 신고가 돌파 {breakoutRows.length.toLocaleString()} · 펀더멘털 {fundamentalRows.length.toLocaleString()}
           </Badge>
           <span>Newest: {updatedAt} KST</span>
         </div>
       </header>
 
-      <Tabs defaultValue="fundamental">
+      <Tabs defaultValue="rs">
         <TabsList className="flex flex-wrap gap-1 bg-transparent p-0">
-          <TabsTrigger value="fundamental" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            📊 펀더멘털
-          </TabsTrigger>
           <TabsTrigger value="rs" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             🚀 RS 모멘텀
           </TabsTrigger>
           <TabsTrigger value="breakout" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            📈 돌파
+            📈 신고가 돌파
+          </TabsTrigger>
+          <TabsTrigger value="fundamental" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            📊 펀더멘털
           </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="fundamental" className="mt-4">
-          <ScreenerClient rows={fundamentalRows} sectors={sectorsFund} />
-        </TabsContent>
 
         <TabsContent value="rs" className="mt-4">
           <RsClient rows={rsRows} sectors={sectorsRs} />
@@ -235,6 +231,10 @@ export default async function ScreenerPage() {
 
         <TabsContent value="breakout" className="mt-4">
           <BreakoutClient rows={breakoutRows} sectors={sectorsBrk} />
+        </TabsContent>
+
+        <TabsContent value="fundamental" className="mt-4">
+          <ScreenerClient rows={fundamentalRows} sectors={sectorsFund} />
         </TabsContent>
       </Tabs>
     </div>
