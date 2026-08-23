@@ -20,7 +20,6 @@ import { AiEarningsSummary } from "./ai-summary";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PriceChart } from "./price-chart";
 import { TradingViewWidget } from "./tradingview-widget";
 import { StockActions } from "./actions";
 import { cn } from "@/lib/utils";
@@ -74,14 +73,6 @@ export default async function StockDetailPage({ params }: PageProps) {
     ? distanceFromHigh(quote?.price ?? 0, fundamentals.fifty_two_week_high)
     : null;
 
-  const chartData = priceData.prices.map((p) => ({
-    date: p.date.slice(5),
-    close: p.close,
-    high: p.high,
-    low: p.low,
-    volume: p.volume,
-  }));
-
   // 52W range position (0-100%)
   const rangePct = fundamentals?.fifty_two_week_high && fundamentals.fifty_two_week_low && quote
     ? ((quote.price - fundamentals.fifty_two_week_low) /
@@ -132,139 +123,133 @@ export default async function StockDetailPage({ params }: PageProps) {
         </header>
       </div>
 
-      {/* ═══ 1. Header Metrics (5 key metrics — Streamlit's st.columns(5)) ═══ */}
+      {/* ═══ 1. Quick Stats · 5 핵심 수치 + 52W range ═══ */}
       <Card>
-        <CardContent className="grid grid-cols-2 gap-4 pt-6 sm:grid-cols-5">
-          <KeyMetric
-            label="현재가"
-            value={quote ? `$${quote.price.toFixed(2)}` : "-"}
-            change={quote?.changePct}
-          />
-          <KeyMetric label="시가총액" value={priceData.market_cap ? fmtMarketCap(priceData.market_cap) : "-"} />
-          <KeyMetric label="P/E" value={fundamentals?.pe_ratio && fundamentals.pe_ratio > 0 ? fundamentals.pe_ratio.toFixed(1) : "-"} />
-          <KeyMetric label="52주 고가" value={fundamentals?.fifty_two_week_high ? `$${fundamentals.fifty_two_week_high.toFixed(2)}` : "-"} />
-          <KeyMetric label="52주 저가" value={fundamentals?.fifty_two_week_low ? `$${fundamentals.fifty_two_week_low.toFixed(2)}` : "-"} />
+        <CardContent className="flex flex-col gap-4 pt-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+            <KeyMetric label="현재가" value={quote ? `$${quote.price.toFixed(2)}` : "-"} change={quote?.changePct} />
+            <KeyMetric label="시가총액" value={priceData.market_cap ? fmtMarketCap(priceData.market_cap) : "-"} />
+            <KeyMetric label="P/E" value={fundamentals?.pe_ratio && fundamentals.pe_ratio > 0 ? fundamentals.pe_ratio.toFixed(1) : "-"} />
+            <KeyMetric label="52주 고가" value={fundamentals?.fifty_two_week_high ? `$${fundamentals.fifty_two_week_high.toFixed(2)}` : "-"} />
+            <KeyMetric label="52주 저가" value={fundamentals?.fifty_two_week_low ? `$${fundamentals.fifty_two_week_low.toFixed(2)}` : "-"} />
+          </div>
+          {rangePct !== null && fundamentals?.fifty_two_week_low && fundamentals?.fifty_two_week_high && (
+            <div>
+              <div className="mb-1 flex items-baseline justify-between text-xs text-muted-foreground">
+                <span>${fundamentals.fifty_two_week_low.toFixed(2)}</span>
+                <span className="font-semibold text-foreground">52W Range: {rangePct.toFixed(0)}%</span>
+                <span>${fundamentals.fifty_two_week_high.toFixed(2)}</span>
+              </div>
+              <div className="relative h-2 overflow-hidden rounded-full bg-gradient-to-r from-destructive via-amber-400 to-success">
+                <div
+                  className="absolute top-0 h-full w-1 bg-foreground shadow-lg"
+                  style={{ left: `${rangePct}%`, transform: "translateX(-50%)" }}
+                />
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* 52W range slider bar */}
-      {rangePct !== null && fundamentals?.fifty_two_week_low && fundamentals?.fifty_two_week_high && (
-        <div className="rounded-lg border border-border/40 bg-card/40 p-4">
-          <div className="mb-1 flex items-baseline justify-between text-xs text-muted-foreground">
-            <span>${fundamentals.fifty_two_week_low.toFixed(2)}</span>
-            <span className="font-semibold text-foreground">52W Range: {rangePct.toFixed(0)}%</span>
-            <span>${fundamentals.fifty_two_week_high.toFixed(2)}</span>
+      {/* ═══ 2. AI 실적 요약 — 상단 배치 (TL;DR) ═══ */}
+      <Card className="border-premium/30 bg-premium/5">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">🤖 AI 실적 요약</CardTitle>
+            <Badge variant="secondary" className="bg-premium/20 text-premium text-[10px]">Gemini 2.5 Flash</Badge>
           </div>
-          <div className="relative h-2 overflow-hidden rounded-full bg-gradient-to-r from-destructive via-amber-400 to-success">
-            <div
-              className="absolute top-0 h-full w-1 bg-foreground shadow-lg"
-              style={{ left: `${rangePct}%`, transform: "translateX(-50%)" }}
-            />
-          </div>
-        </div>
-      )}
+          <CardDescription className="text-xs">
+            30초 요약 · 실적품질 · 강점 · 우려 · 애널리스트 컨센서스 · 종합판정 5섹션
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {aiContext ? (
+            <AiEarningsSummary {...aiContext} />
+          ) : (
+            <p className="text-xs text-muted-foreground">실적 데이터가 없어 요약을 생성할 수 없습니다.</p>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* ═══ 2. Chart — TradingView Advanced Chart widget ═══ */}
+      {/* ═══ 3. TradingView Chart ═══ */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">가격 차트</CardTitle>
-          <CardDescription className="text-xs">
-            TradingView 임베드 · 인디케이터 · 드로잉 · 여러 봉 지원
-          </CardDescription>
+          <CardTitle className="text-base">📈 가격 차트</CardTitle>
+          <CardDescription className="text-xs">TradingView · 인디케이터 · 드로잉 · 여러 봉 지원</CardDescription>
         </CardHeader>
         <CardContent>
           <TradingViewWidget symbol={ticker} />
         </CardContent>
       </Card>
 
-      {/* Cache-based mini area chart (fallback / quick reference) */}
-      {chartData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">캐시 기반 미니 차트 ({chartData.length}일)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PriceChart data={chartData} />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ═══ 3. Analyst consensus (Finnhub) ═══ */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">애널리스트 컨센서스</h2>
-        {priceTarget ? (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <KeyMetric label="목표가 (중앙값)" value={`$${priceTarget.targetMedian.toFixed(2)}`} />
-                <KeyMetric
-                  label="평균"
-                  value={`$${priceTarget.targetMean.toFixed(2)}`}
-                  change={quote ? ((priceTarget.targetMean - quote.price) / quote.price) * 100 : undefined}
-                />
-                <KeyMetric label="최고" value={`$${priceTarget.targetHigh.toFixed(2)}`} />
-                <KeyMetric label="최저" value={`$${priceTarget.targetLow.toFixed(2)}`} />
+      {/* ═══ 4. Analyst View (목표가 + 추천등급 통합) ═══ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">👔 애널리스트 컨센서스</CardTitle>
+          <CardDescription className="text-xs">
+            {priceTarget ? "목표가 · 추천 등급 분포" : "추천 등급 분포 (목표가는 유료 tier)"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {priceTarget ? (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <KeyMetric label="목표가 (중앙값)" value={`$${priceTarget.targetMedian.toFixed(2)}`} />
+              <KeyMetric
+                label="평균"
+                value={`$${priceTarget.targetMean.toFixed(2)}`}
+                change={quote ? ((priceTarget.targetMean - quote.price) / quote.price) * 100 : undefined}
+              />
+              <KeyMetric label="최고" value={`$${priceTarget.targetHigh.toFixed(2)}`} />
+              <KeyMetric label="최저" value={`$${priceTarget.targetLow.toFixed(2)}`} />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              목표가 컨센서스는 Finnhub <strong>유료 tier</strong> 데이터 (무료 접근 불가). 아래 추천 등급 분포는 무료 tier로도 확인 가능.
+            </p>
+          )}
+          {recommendation && recommendation.length > 0 && (
+            <div className="border-t border-border/40 pt-4">
+              <div className="mb-2 flex items-baseline justify-between text-xs">
+                <span className="font-semibold">추천 등급 분포</span>
+                <span className="text-muted-foreground">{recommendation[0].period}</span>
               </div>
-              <p className="mt-3 text-[11px] text-muted-foreground">
-                업데이트: {new Date(priceTarget.lastUpdated).toLocaleDateString("ko-KR")}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="border-muted/40">
-            <CardContent className="py-4 text-xs text-muted-foreground">
-              목표가 컨센서스는 Finnhub 유료 tier 데이터입니다 (무료 tier 접근 불가).
-              아래 <strong className="text-foreground">추천 등급 분포</strong>는 무료 tier로도 확인 가능.
-            </CardContent>
-          </Card>
-        )}
-        {recommendation && recommendation.length > 0 && (
-          <Card className="mt-3">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">추천 등급 분포 (최근)</CardTitle>
-              <CardDescription className="text-xs">{recommendation[0].period}</CardDescription>
-            </CardHeader>
-            <CardContent>
               <RecommendationBar row={recommendation[0]} />
-            </CardContent>
-          </Card>
-        )}
-      </section>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* ═══ 4-5. Financial metrics + Fundamentals grid ═══ */}
-      {fundamentals && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">펀더멘털</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <QuoteCell label="P/E" value={fundamentals.pe_ratio && fundamentals.pe_ratio > 0 ? fundamentals.pe_ratio.toFixed(2) : "-"} />
-            <QuoteCell label="P/B" value={fundamentals.pb_ratio?.toFixed(2) ?? "-"} />
-            <QuoteCell label="P/S" value={fundamentals.ps_ratio?.toFixed(2) ?? "-"} />
-            <QuoteCell label="EPS" value={fundamentals.eps ? `$${fundamentals.eps.toFixed(2)}` : "-"} />
-            <QuoteCell label="ROE" value={fundamentals.roe !== null ? `${(fundamentals.roe * 100).toFixed(1)}%` : "-"} />
-            <QuoteCell label="배당%" value={fundamentals.dividend_yield && fundamentals.dividend_yield > 0 ? `${fundamentals.dividend_yield.toFixed(2)}%` : "-"} />
-            <QuoteCell label="Beta" value={fundamentals.beta?.toFixed(2) ?? "-"} />
-            <QuoteCell label="부채비율" value={fundamentals.debt_to_equity?.toFixed(1) ?? "-"} />
-            <QuoteCell label="장부가치" value={fundamentals.book_value ? `$${fundamentals.book_value.toFixed(2)}` : "-"} />
-            <QuoteCell label="주당매출" value={fundamentals.revenue_per_share ? `$${fundamentals.revenue_per_share.toFixed(2)}` : "-"} />
-            <QuoteCell label="평균거래량" value={fundamentals.avg_volume ? `${(fundamentals.avg_volume / 1e6).toFixed(1)}M` : "-"} />
-            <QuoteCell
-              label="52W 고점 대비"
-              value={highDist !== null ? `${highDist >= 0 ? "+" : ""}${highDist.toFixed(1)}%` : "-"}
-              color={highDist !== null && highDist > -5 ? "text-success" : "text-muted-foreground"}
-            />
-          </CardContent>
-        </Card>
-      )}
+      {/* ═══ 5. Earnings Surprise ═══ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">📊 실적 서프라이즈</CardTitle>
+          <CardDescription className="text-xs">
+            {earnings ? `최근 ${earnings.length}분기 · Actual vs Estimate` : "Finnhub"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <EarningsSurpriseView data={earnings} />
+        </CardContent>
+      </Card>
 
-      {/* ═══ 6. News (Finnhub) ═══ */}
+      {/* ═══ 6. Insider Trading (SEC Form 4) ═══ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">🏛️ 내부자 거래 (SEC Form 4)</CardTitle>
+          <CardDescription className="text-xs">
+            {insiders ? `최근 6개월 · ${insiders.length}건` : "최근 6개월"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InsiderView data={insiders} />
+        </CardContent>
+      </Card>
+
+      {/* ═══ 7. News ═══ */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">📰 최근 뉴스</CardTitle>
-          <CardDescription className="text-xs">
-            Finnhub 최근 14일 · {news?.length ?? 0}건
-          </CardDescription>
+          <CardDescription className="text-xs">Finnhub 최근 14일 · {news?.length ?? 0}건</CardDescription>
         </CardHeader>
         <CardContent>
           {news && news.length > 0 ? (
@@ -297,58 +282,32 @@ export default async function StockDetailPage({ params }: PageProps) {
         </CardContent>
       </Card>
 
-      {/* ═══ 7. Earnings Surprise ═══ */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">📊 실적 서프라이즈</CardTitle>
-          <CardDescription className="text-xs">
-            {earnings ? `최근 ${earnings.length}분기 · Actual vs Estimate` : "Finnhub"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <EarningsSurpriseView data={earnings} />
-        </CardContent>
-      </Card>
-
-      {/* ═══ 8. Insider Trading (SEC Form 4) ═══ */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">🏛️ 내부자 거래 (SEC Form 4)</CardTitle>
-          <CardDescription className="text-xs">
-            {insiders ? `최근 6개월 · ${insiders.length}건` : "최근 6개월"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <InsiderView data={insiders} />
-        </CardContent>
-      </Card>
-
-      {/* ═══ 9. AI Earnings Summary (Gemini) ═══ */}
-      <Card className="border-premium/30 bg-premium/5">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base">🤖 AI 실적 요약</CardTitle>
-            <Badge variant="secondary" className="bg-premium/20 text-premium text-[10px]">Gemini 2.5 Flash</Badge>
+      {/* ═══ 8. 펀더멘털 상세 (접이식 · 관심자만) ═══ */}
+      {fundamentals && (
+        <details className="rounded-lg border border-border/40 bg-card/40 p-4">
+          <summary className="cursor-pointer text-sm font-semibold hover:text-primary">
+            🔬 펀더멘털 상세 (12개 지표)
+          </summary>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <QuoteCell label="P/E" value={fundamentals.pe_ratio && fundamentals.pe_ratio > 0 ? fundamentals.pe_ratio.toFixed(2) : "-"} />
+            <QuoteCell label="P/B" value={fundamentals.pb_ratio?.toFixed(2) ?? "-"} />
+            <QuoteCell label="P/S" value={fundamentals.ps_ratio?.toFixed(2) ?? "-"} />
+            <QuoteCell label="EPS" value={fundamentals.eps ? `$${fundamentals.eps.toFixed(2)}` : "-"} />
+            <QuoteCell label="ROE" value={fundamentals.roe !== null ? `${(fundamentals.roe * 100).toFixed(1)}%` : "-"} />
+            <QuoteCell label="배당%" value={fundamentals.dividend_yield && fundamentals.dividend_yield > 0 ? `${fundamentals.dividend_yield.toFixed(2)}%` : "-"} />
+            <QuoteCell label="Beta" value={fundamentals.beta?.toFixed(2) ?? "-"} />
+            <QuoteCell label="부채비율" value={fundamentals.debt_to_equity?.toFixed(1) ?? "-"} />
+            <QuoteCell label="장부가치" value={fundamentals.book_value ? `$${fundamentals.book_value.toFixed(2)}` : "-"} />
+            <QuoteCell label="주당매출" value={fundamentals.revenue_per_share ? `$${fundamentals.revenue_per_share.toFixed(2)}` : "-"} />
+            <QuoteCell label="평균거래량" value={fundamentals.avg_volume ? `${(fundamentals.avg_volume / 1e6).toFixed(1)}M` : "-"} />
+            <QuoteCell
+              label="52W 고점 대비"
+              value={highDist !== null ? `${highDist >= 0 ? "+" : ""}${highDist.toFixed(1)}%` : "-"}
+              color={highDist !== null && highDist > -5 ? "text-success" : "text-muted-foreground"}
+            />
           </div>
-          <CardDescription className="text-xs">
-            실적품질 · 강점 · 우려 · 애널리스트 컨센서스 · 종합판정 5섹션 · 데이터 기반 자동 생성
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {aiContext ? (
-            <AiEarningsSummary {...aiContext} />
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              실적 데이터가 없어 요약을 생성할 수 없습니다.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="rounded-lg border border-border/40 bg-muted/20 p-3 text-xs text-muted-foreground">
-        <strong className="text-foreground">비고:</strong> TradingView 차트 · 애널리스트 컨센서스 · 뉴스는 실데이터.
-        AI 밸류에이션 · 실적 서프라이즈 상세 · SEC Form 4 내부자 거래는 LLM/SEC Form 4 파이프라인 도입 후 활성화 예정.
-      </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -410,11 +369,43 @@ function EarningsSurpriseView({ data }: { data: import("@/lib/finnhub").Earnings
   const avgSurprise = data.reduce((s, d) => s + d.surprisePercent, 0) / data.length;
   const latest = chrono[chrono.length - 1];
 
+  // Consecutive beat/miss streak from the most recent quarter backwards
+  let streak = 0;
+  let streakKind: "beat" | "miss" | null = null;
+  for (let i = chrono.length - 1; i >= 0; i--) {
+    const isBeat = chrono[i].surprisePercent > 0;
+    if (streakKind === null) {
+      streakKind = isBeat ? "beat" : "miss";
+      streak = 1;
+    } else if ((streakKind === "beat" && isBeat) || (streakKind === "miss" && !isBeat)) {
+      streak += 1;
+    } else {
+      break;
+    }
+  }
+
   // Bar chart bounds
   const maxAbs = Math.max(...chrono.flatMap((d) => [Math.abs(d.actual), Math.abs(d.estimate)]));
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Streak badge — instant visual verdict */}
+      {streakKind && (
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold",
+            streakKind === "beat"
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-destructive/40 bg-destructive/10 text-destructive",
+          )}
+        >
+          <span className="text-lg">{streakKind === "beat" ? "🔥" : "❄️"}</span>
+          <span>
+            {streak}분기 연속 {streakKind === "beat" ? "컨센서스 상회 (Beat)" : "컨센서스 하회 (Miss)"}
+          </span>
+        </div>
+      )}
+
       {/* Summary metrics */}
       <div className="grid grid-cols-3 gap-3">
         <KeyMetric
@@ -495,11 +486,37 @@ function InsiderView({ data }: { data: import("@/lib/finnhub").InsiderTx[] | nul
   // Summary: buy vs sell counts + net shares
   const buys = data.filter((d) => d.change > 0);
   const sells = data.filter((d) => d.change < 0);
-  const netShares = data.reduce((s, d) => s + d.change, 0);
   const netUsd = data.reduce((s, d) => s + (d.change * (d.transactionPrice || 0)), 0);
+
+  // Group by month to show a mini sparkline of net USD activity
+  const byMonth = new Map<string, number>();
+  for (const t of data) {
+    const m = (t.filingDate || "").slice(0, 7);
+    if (!m) continue;
+    byMonth.set(m, (byMonth.get(m) ?? 0) + t.change * (t.transactionPrice || 0));
+  }
+  const monthly = Array.from(byMonth.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, netUsd]) => ({ month, netUsd }));
+  const monthlyMaxAbs = Math.max(1, ...monthly.map((m) => Math.abs(m.netUsd)));
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Big verdict badge */}
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold",
+          netUsd >= 0
+            ? "border-success/40 bg-success/10 text-success"
+            : "border-destructive/40 bg-destructive/10 text-destructive",
+        )}
+      >
+        <span className="text-lg">{netUsd >= 0 ? "🟢" : "🔴"}</span>
+        <span>
+          최근 6개월 내부자 {netUsd >= 0 ? "순매수" : "순매도"} · {fmtSignedUsd(netUsd)}
+        </span>
+      </div>
+
       <div className="grid grid-cols-3 gap-3">
         <KeyMetric label="매수 건수" value={String(buys.length)} tone={buys.length > sells.length ? "up" : "neutral"} />
         <KeyMetric label="매도 건수" value={String(sells.length)} tone={sells.length > buys.length ? "down" : "neutral"} />
@@ -509,6 +526,32 @@ function InsiderView({ data }: { data: import("@/lib/finnhub").InsiderTx[] | nul
           tone={netUsd >= 0 ? "up" : "down"}
         />
       </div>
+
+      {/* Monthly net-buy sparkline (bar per month, +/- around zero) */}
+      {monthly.length > 1 && (
+        <div className="rounded-md border border-border/40 bg-card/40 p-3">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            월별 순매수 흐름
+          </div>
+          <div className="flex items-end gap-1" style={{ height: 60 }}>
+            {monthly.map((m) => {
+              const pctHeight = (Math.abs(m.netUsd) / monthlyMaxAbs) * 100;
+              const isUp = m.netUsd >= 0;
+              return (
+                <div key={m.month} className="flex flex-1 flex-col items-center gap-1" title={`${m.month}: ${fmtSignedUsd(m.netUsd)}`}>
+                  <div className="flex w-full flex-col justify-end" style={{ height: 44 }}>
+                    <div
+                      className={cn("w-full rounded-sm", isUp ? "bg-success/70" : "bg-destructive/70")}
+                      style={{ height: `${pctHeight}%` }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-muted-foreground">{m.month.slice(5)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
