@@ -207,10 +207,33 @@ export type BacktestSummary = {
   avg_period_return_pct?: number;
   avg_excess_return_pct?: number;
   profit_factor?: number;
+  // Turnover: two-way rotation per rebalance (avg) and its annualised form.
+  avg_turnover_pct?: number;
+  annual_turnover_pct?: number;
+  // Benchmark comparison (SPY over the same window).
+  spy_cagr_pct?: number;
+  alpha_annual_pct?: number;
+  // Cash strategy stats (populated only when cash_strategy != "none").
+  avg_cash_pct?: number;
+  max_cash_pct?: number;
+  bull_regime_pct?: number;
+  bear_regime_pct?: number;
+};
+
+// Per-model prediction breakdown attached to picks / rankings so the UI can
+// expose dispersion + agreement rather than a single opaque score.
+export type ModelBreakdown = {
+  pred_rf?: number | null;
+  pred_xgb?: number | null;
+  pred_lgbm?: number | null;
+  pred_mean?: number | null;
+  pred_std?: number | null;
+  model_agreement?: string | null;   // e.g. "3/3", "2/3"
+  consensus_rank?: number;
 };
 
 // Today's/latest pick with weight and score
-export type TodayPick = {
+export type TodayPick = ModelBreakdown & {
   ticker: string;
   weight?: number;
   composite_score?: number;
@@ -258,7 +281,7 @@ export type IcRecord = {
 export type ImportanceRecord = Record<string, number | string>;
 
 // Latest full ranking entry
-export type RankingEntry = {
+export type RankingEntry = ModelBreakdown & {
   ticker: string;
   composite_score?: number;
   Mom_1m?: number;
@@ -267,6 +290,10 @@ export type RankingEntry = {
   Mom_12m?: number;
   Volatility_30d?: number;
 };
+
+// One point on the SPY overlay — normalised to 1.0 at backtest start so it
+// can be plotted on the same axis as the equity curve.
+export type BenchmarkPoint = { date: string; value: number };
 
 export type BacktestFull = {
   port_dates: string[];         // equity curve dates
@@ -279,6 +306,7 @@ export type BacktestFull = {
   fimp_xgb_data: ImportanceRecord[];   // xgboost (may be empty)
   fimp_lgbm_data: ImportanceRecord[];  // lightgbm (may be empty)
   last_full_ranking: RankingEntry[];
+  benchmark_series?: BenchmarkPoint[]; // SPY overlay (normalised to 1.0)
   use_ensemble: boolean;
   rebal_m: number;
   cash_strategy: string;

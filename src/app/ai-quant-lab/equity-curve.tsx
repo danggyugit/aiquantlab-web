@@ -1,10 +1,19 @@
 "use client";
 
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { BenchmarkPoint } from "@/lib/data";
 
-type Point = { date: string; value: number; returnPct: number };
+type Point = { date: string; value: number; spy?: number; returnPct: number };
 
-export function EquityCurve({ dates, values }: { dates: string[]; values: number[] }) {
+export function EquityCurve({
+  dates,
+  values,
+  benchmark,
+}: {
+  dates: string[];
+  values: number[];
+  benchmark?: BenchmarkPoint[];
+}) {
   if (dates.length === 0 || values.length === 0) {
     return (
       <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
@@ -13,11 +22,19 @@ export function EquityCurve({ dates, values }: { dates: string[]; values: number
     );
   }
 
-  const data: Point[] = dates.map((d, i) => ({
-    date: d.slice(0, 10),
-    value: values[i] ?? 0,
-    returnPct: ((values[i] ?? 1) - 1) * 100,
-  }));
+  const spyByDate = new Map((benchmark ?? []).map((b) => [b.date, b.value]));
+
+  const data: Point[] = dates.map((d, i) => {
+    const day = d.slice(0, 10);
+    return {
+      date: day,
+      value: values[i] ?? 0,
+      spy: spyByDate.get(day),
+      returnPct: ((values[i] ?? 1) - 1) * 100,
+    };
+  });
+
+  const hasBenchmark = (benchmark?.length ?? 0) > 0;
 
   return (
     <div className="h-[300px] w-full">
@@ -43,9 +60,11 @@ export function EquityCurve({ dates, values }: { dates: string[]; values: number
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(v) => {
+            formatter={(v, name) => {
               const n = Number(v);
-              return [`${n.toFixed(3)}× (${((n - 1) * 100).toFixed(1)}%)`, "Portfolio"];
+              if (Number.isNaN(n)) return ["-", name as string];
+              const label = name === "spy" ? "SPY" : "Portfolio";
+              return [`${n.toFixed(3)}× (${((n - 1) * 100).toFixed(1)}%)`, label];
             }}
           />
           <Area
@@ -54,9 +73,36 @@ export function EquityCurve({ dates, values }: { dates: string[]; values: number
             stroke="oklch(0.623 0.214 259.815)"
             strokeWidth={2}
             fill="url(#equityFill)"
+            name="Portfolio"
+            isAnimationActive={false}
           />
+          {hasBenchmark && (
+            <Line
+              type="monotone"
+              dataKey="spy"
+              stroke="var(--muted-foreground)"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              dot={false}
+              name="SPY"
+              isAnimationActive={false}
+              connectNulls
+            />
+          )}
         </AreaChart>
       </ResponsiveContainer>
+      {hasBenchmark && (
+        <div className="mt-1 flex items-center justify-end gap-3 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-[2px] w-4 rounded" style={{ backgroundColor: "oklch(0.623 0.214 259.815)" }} />
+            Portfolio
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-[2px] w-4 border-t border-dashed border-muted-foreground" />
+            SPY (동일 기간)
+          </span>
+        </div>
+      )}
     </div>
   );
 }

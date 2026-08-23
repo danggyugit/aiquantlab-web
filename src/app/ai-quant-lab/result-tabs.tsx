@@ -62,13 +62,53 @@ export function ResultTabs({
             <Metric label="MDD" value={fmtPct(s.max_dd_pct)} tone={s.max_dd_pct && s.max_dd_pct > -20 ? "success" : "danger"} />
             <Metric label="월간 승률" value={fmtPct(s.monthly_win_rate_pct)} tone={s.monthly_win_rate_pct && s.monthly_win_rate_pct > 50 ? "success" : "neutral"} />
           </div>
+
+          {/* SPY 벤치마크 대비 초과성과 + 회전율. Live Picks 산출 방식 개선안 #4/#8. */}
+          <div className="grid gap-3 sm:grid-cols-4">
+            <Metric
+              label="Alpha (연율)"
+              value={fmtPct(s.alpha_annual_pct)}
+              tone={pos(s.alpha_annual_pct)}
+              hint={s.spy_cagr_pct !== undefined ? `SPY ${fmtPct(s.spy_cagr_pct)}` : undefined}
+            />
+            <Metric
+              label="SPY CAGR"
+              value={fmtPct(s.spy_cagr_pct)}
+              tone="neutral"
+              hint="동일 기간 벤치마크"
+            />
+            <Metric
+              label="평균 회전율"
+              value={fmtPct(s.avg_turnover_pct)}
+              tone={s.avg_turnover_pct !== undefined && s.avg_turnover_pct < 50 ? "success" : "neutral"}
+              hint="리밸런싱당"
+            />
+            <Metric
+              label="연 회전율"
+              value={fmtPct(s.annual_turnover_pct)}
+              tone={s.annual_turnover_pct !== undefined && s.annual_turnover_pct < 300 ? "success" : "neutral"}
+              hint="거래비용 부담 지표"
+            />
+          </div>
+
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">누적 수익률 (Equity Curve)</CardTitle>
-              <CardDescription className="text-xs">초기 자본 1.0 기준 · 리밸런싱 {s.n_rebalances}회</CardDescription>
+              <CardDescription className="text-xs">
+                초기 자본 1.0 기준 · 리밸런싱 {s.n_rebalances}회
+                {full?.benchmark_series && full.benchmark_series.length > 0 && " · SPY 오버레이 포함"}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {full ? <EquityCurve dates={full.port_dates} values={full.port_values} /> : <NoData />}
+              {full ? (
+                <EquityCurve
+                  dates={full.port_dates}
+                  values={full.port_values}
+                  benchmark={full.benchmark_series}
+                />
+              ) : (
+                <NoData />
+              )}
             </CardContent>
           </Card>
 
@@ -107,6 +147,16 @@ export function ResultTabs({
 
         {/* --- Tab 2: Live Picks --- */}
         <TabsContent value="live" className="mt-4 flex flex-col gap-4">
+          {full?.use_ensemble && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-[11px] text-muted-foreground">
+              💡 <strong className="text-foreground">모델 dispersion 읽는 법</strong>:
+              <span className="ml-1">
+                <strong>σ</strong>는 RF·XGB·LGBM 3개 모델 예측의 표준편차 (작을수록 합의 강함).
+                <strong> 합의</strong>는 양(+)의 예측을 낸 모델 수 (3/3 = 만장일치, 1/3 = 이견 큼).
+                모델간 합의가 강한 종목일수록 신뢰도 높음.
+              </span>
+            </div>
+          )}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
@@ -155,7 +205,15 @@ export function ResultTabs({
               <CardTitle className="text-base">누적 수익률</CardTitle>
             </CardHeader>
             <CardContent>
-              {full ? <EquityCurve dates={full.port_dates} values={full.port_values} /> : <NoData />}
+              {full ? (
+                <EquityCurve
+                  dates={full.port_dates}
+                  values={full.port_values}
+                  benchmark={full.benchmark_series}
+                />
+              ) : (
+                <NoData />
+              )}
             </CardContent>
           </Card>
           {full && <MonthlyReturnsCard dates={full.port_dates} values={full.port_values} />}
@@ -269,19 +327,35 @@ export function ResultTabs({
         </TabsContent>
 
         {/* --- Tab 8: Tracking --- */}
-        <TabsContent value="tracking" className="mt-4">
+        <TabsContent value="tracking" className="mt-4 flex flex-col gap-4">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <Metric label="Alpha (연율)" value={fmtPct(s.alpha_annual_pct)} tone={pos(s.alpha_annual_pct)} hint="AI − SPY CAGR" />
+            <Metric label="Portfolio CAGR" value={fmtPct(s.cagr_pct)} tone={pos(s.cagr_pct)} />
+            <Metric label="SPY CAGR" value={fmtPct(s.spy_cagr_pct)} tone="neutral" hint="동일 기간" />
+            <Metric label="평균 초과수익" value={fmtPct(s.avg_excess_return_pct)} tone={pos(s.avg_excess_return_pct)} hint="리밸런싱당 vs 유니버스 평균" />
+          </div>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">벤치마크 추적</CardTitle>
+              <CardTitle className="text-base">SPY 대비 누적 성과</CardTitle>
               <CardDescription className="text-xs">
-                평균 초과수익 {fmtPct(s.avg_excess_return_pct)} · 리밸런싱당 평균 수익 {fmtPct(s.avg_period_return_pct)}
+                실선 = AI 포트폴리오 · 점선 = SPY (동일 기간, 초기값 1.0 정규화)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {full ? <EquityCurve dates={full.port_dates} values={full.port_values} /> : <NoData />}
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                SPY·QQQ 오버레이는 벤치마크 히스토리 캐시 확장 후 추가 예정.
-              </p>
+              {full ? (
+                <EquityCurve
+                  dates={full.port_dates}
+                  values={full.port_values}
+                  benchmark={full.benchmark_series}
+                />
+              ) : (
+                <NoData />
+              )}
+              {full && (!full.benchmark_series || full.benchmark_series.length === 0) && (
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  이 프리셋의 캐시에는 아직 SPY 벤치마크가 포함되지 않았습니다. 다음 배치 실행 후 표시됩니다.
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -296,13 +370,20 @@ function Metric({
   label,
   value,
   tone,
-}: { label: string; value: string | number | undefined; tone: "success" | "danger" | "neutral" }) {
+  hint,
+}: {
+  label: string;
+  value: string | number | undefined;
+  tone: "success" | "danger" | "neutral";
+  hint?: string;
+}) {
   const color =
     tone === "success" ? "text-success" : tone === "danger" ? "text-destructive" : "text-foreground";
   return (
     <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2.5">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className={cn("mt-0.5 text-xl font-bold tabular-nums", color)}>{value ?? "-"}</div>
+      {hint && <div className="mt-0.5 text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );
 }
@@ -366,6 +447,7 @@ function PicksTable({
 }: { picks: import("@/lib/data").TodayPick[]; isEnsemble: boolean }) {
   if (picks.length === 0) return <NoData label="추천 종목 없음" />;
   const total = picks.length; // for weight column context (picks are the selected N)
+  const hasBreakdown = picks.some((p) => p.model_agreement || p.pred_std !== undefined);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -374,9 +456,19 @@ function PicksTable({
             <th className="px-3 py-2">Ticker</th>
             <th className="px-3 py-2 text-right">비중</th>
             <th className="px-3 py-2 text-right">{scoreLabel(isEnsemble)}</th>
+            {hasBreakdown && (
+              <>
+                <th className="px-3 py-2 text-right hidden md:table-cell" title="모델간 예측 표준편차 — 작을수록 합의 강함">
+                  σ
+                </th>
+                <th className="px-3 py-2 text-center hidden sm:table-cell" title="양의 예측을 한 모델 수 / 총 모델 수">
+                  합의
+                </th>
+              </>
+            )}
             <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 3M</th>
-            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 12M</th>
-            <th className="px-3 py-2 text-right hidden md:table-cell">30d 변동성</th>
+            <th className="px-3 py-2 text-right hidden md:table-cell">Mom 12M</th>
+            <th className="px-3 py-2 text-right hidden lg:table-cell">30d 변동성</th>
           </tr>
         </thead>
         <tbody>
@@ -394,9 +486,19 @@ function PicksTable({
                 <td className={cn("px-3 py-2 text-right tabular-nums font-semibold", scoreColor)}>
                   {formatScore(p.composite_score, isEnsemble, total)}
                 </td>
+                {hasBreakdown && (
+                  <>
+                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">
+                      {fmtStd(p.pred_std)}
+                    </td>
+                    <td className="px-3 py-2 text-center hidden sm:table-cell">
+                      <AgreementBadge value={p.model_agreement} />
+                    </td>
+                  </>
+                )}
                 <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(p.Mom_3m)}</td>
-                <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(p.Mom_12m)}</td>
-                <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">{fmtVol(p.Volatility_30d)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">{fmtMom(p.Mom_12m)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell text-muted-foreground">{fmtVol(p.Volatility_30d)}</td>
               </tr>
             );
           })}
@@ -415,6 +517,7 @@ function RankingTable({
   totalRanked: number;
   isEnsemble: boolean;
 }) {
+  const hasBreakdown = rows.some((r) => r.model_agreement || r.pred_std !== undefined);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -423,9 +526,15 @@ function RankingTable({
             <th className="px-3 py-2 w-10">#</th>
             <th className="px-3 py-2">Ticker</th>
             <th className="px-3 py-2 text-right">{scoreLabel(isEnsemble)}</th>
+            {hasBreakdown && (
+              <>
+                <th className="px-3 py-2 text-right hidden md:table-cell" title="모델간 예측 표준편차">σ</th>
+                <th className="px-3 py-2 text-center hidden sm:table-cell" title="양의 예측을 한 모델 수">합의</th>
+              </>
+            )}
             <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 3M</th>
-            <th className="px-3 py-2 text-right hidden sm:table-cell">Mom 12M</th>
-            <th className="px-3 py-2 text-right hidden md:table-cell">30d 변동성</th>
+            <th className="px-3 py-2 text-right hidden md:table-cell">Mom 12M</th>
+            <th className="px-3 py-2 text-right hidden lg:table-cell">30d 변동성</th>
           </tr>
         </thead>
         <tbody>
@@ -445,15 +554,53 @@ function RankingTable({
                 <td className={cn("px-3 py-2 text-right tabular-nums font-semibold", scoreColor)}>
                   {formatScore(r.composite_score, isEnsemble, totalRanked)}
                 </td>
+                {hasBreakdown && (
+                  <>
+                    <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">
+                      {fmtStd(r.pred_std)}
+                    </td>
+                    <td className="px-3 py-2 text-center hidden sm:table-cell">
+                      <AgreementBadge value={r.model_agreement} />
+                    </td>
+                  </>
+                )}
                 <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(r.Mom_3m)}</td>
-                <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{fmtMom(r.Mom_12m)}</td>
-                <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell text-muted-foreground">{fmtVol(r.Volatility_30d)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">{fmtMom(r.Mom_12m)}</td>
+                <td className="px-3 py-2 text-right tabular-nums hidden lg:table-cell text-muted-foreground">{fmtVol(r.Volatility_30d)}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+// Format prediction std (raw return space, so ~0.01–0.10 typical). Small σ →
+// models agree; large σ → dispersion. Blank when non-ensemble (std = 0).
+function fmtStd(v: number | null | undefined): string {
+  if (v === undefined || v === null || Number.isNaN(v) || v === 0) return "-";
+  return v.toFixed(3);
+}
+
+// "3/3" → success, "2/3" → neutral, "1/3" or lower → danger.
+function AgreementBadge({ value }: { value: string | null | undefined }) {
+  if (!value) return <span className="text-muted-foreground">-</span>;
+  const parts = value.split("/");
+  const pos = Number(parts[0]);
+  const tot = Number(parts[1]);
+  if (!Number.isFinite(pos) || !Number.isFinite(tot) || tot === 0) {
+    return <span className="text-muted-foreground">-</span>;
+  }
+  const ratio = pos / tot;
+  const tone =
+    ratio >= 1 ? "border-success/40 bg-success/10 text-success" :
+    ratio >= 0.66 ? "border-primary/30 bg-primary/10 text-primary" :
+    "border-destructive/30 bg-destructive/10 text-destructive";
+  return (
+    <span className={cn("inline-block rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold", tone)}>
+      {value}
+    </span>
   );
 }
 
