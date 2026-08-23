@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ScreenerInsights } from "@/components/screener-insights";
 
 // Mirrors streamlit_app/app_pages/8_Screener.py exactly.
 
@@ -251,6 +252,9 @@ export function ScreenerClient({ rows, sectors }: { rows: ScreenerRow[]; sectors
           </Select>
         </Field>
       </div>
+
+      {/* Where are the results clustered? sector · industry breakdown */}
+      <ScreenerInsights filtered={filtered} universe={rows} />
 
       {/* ═══ Results Table ═══ */}
       <Card className="overflow-hidden">

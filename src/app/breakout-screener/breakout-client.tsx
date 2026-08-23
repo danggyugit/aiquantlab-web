@@ -9,11 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown } from "lucide-react";
 import { fmtMarketCap } from "@/lib/data";
+import { ScreenerInsights } from "@/components/screener-insights";
 
 export type BreakoutRow = {
   ticker: string;
   name: string;
   sector: string;
+  industry: string | null;
   capTier: string;
   marketCap: number;
   price: number;
@@ -167,6 +169,9 @@ export function BreakoutClient({ rows, sectors }: { rows: BreakoutRow[]; sectors
       <p className="text-xs text-muted-foreground">
         기준월: 최근 · 조회 {lookback}개월 · 채널폭 {kSigma}σ · 돌파 탐색 {scanLabel} · <strong className="text-foreground">{filtered.length.toLocaleString()}</strong>종목
       </p>
+
+      {/* Where are the results clustered? sector · industry breakdown */}
+      <ScreenerInsights filtered={filtered} universe={rows} />
 
       {/* Result Table */}
       <Card className="overflow-hidden">

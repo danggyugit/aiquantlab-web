@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ScreenerInsights } from "@/components/screener-insights";
 
 /**
  * Relative Strength screener.
@@ -28,6 +29,7 @@ export type RsRow = {
   ticker: string;
   name: string;
   sector: string;
+  industry: string | null;
   capTier: string;
   // Excess returns vs SPY over each period.
   ex1m: number | null;
@@ -407,6 +409,9 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
         <MetricTile label="Avg RS" value={String(avgRs)} tone={avgRs >= 70 ? "success" : "neutral"} />
         <MetricTile label="Sort" value={sortKey === "rsRating" ? "RS" : sortKey.toUpperCase()} />
       </div>
+
+      {/* Where are the results clustered? sector · industry breakdown */}
+      <ScreenerInsights filtered={filtered} universe={rows} />
 
       {/* Histogram */}
       <Card>
