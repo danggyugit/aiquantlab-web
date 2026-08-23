@@ -425,35 +425,35 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="max-h-[720px] overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-left text-[10px] text-muted-foreground">
+          <div className="max-h-[820px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-left text-xs font-semibold text-muted-foreground">
                 <tr>
-                  <th className="px-2 py-2 w-10">#</th>
-                  <th className="px-2 py-2">Ticker</th>
-                  <th className="px-2 py-2 hidden md:table-cell">Name</th>
-                  <th className="px-2 py-2 hidden sm:table-cell">Sector</th>
-                  <th className="px-2 py-2">Pattern</th>
-                  <th className="px-2 py-2 text-right">1M ex</th>
-                  <th className="px-2 py-2 text-right">3M ex</th>
-                  <th className="px-2 py-2 text-right hidden sm:table-cell">6M ex</th>
-                  <th className="px-2 py-2 text-right hidden md:table-cell">12M ex</th>
-                  <th className="px-2 py-2 text-right w-14">RS</th>
+                  <th className="px-3 py-2.5 w-12">#</th>
+                  <th className="px-3 py-2.5">Ticker</th>
+                  <th className="px-3 py-2.5 hidden md:table-cell">Name</th>
+                  <th className="px-3 py-2.5 hidden sm:table-cell">Sector</th>
+                  <th className="px-3 py-2.5">Pattern</th>
+                  <th className="px-3 py-2.5 text-right">1M ex</th>
+                  <th className="px-3 py-2.5 text-right">3M ex</th>
+                  <th className="px-3 py-2.5 text-right hidden sm:table-cell">6M ex</th>
+                  <th className="px-3 py-2.5 text-right hidden md:table-cell">12M ex</th>
+                  <th className="px-3 py-2.5 text-right w-16">RS</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.slice(0, 300).map((r, i) => (
                   <tr key={r.ticker} className="border-b border-border/30 hover:bg-muted/20">
-                    <td className="px-2 py-1.5 text-muted-foreground tabular-nums">{i + 1}</td>
-                    <td className="px-2 py-1.5 font-mono text-xs font-semibold">
+                    <td className="px-3 py-2 text-muted-foreground tabular-nums text-sm">{i + 1}</td>
+                    <td className="px-3 py-2 font-mono text-sm font-semibold">
                       <Link href={`/stock/${r.ticker}`} className="text-primary hover:underline">{r.ticker}</Link>
                     </td>
-                    <td className="px-2 py-1.5 truncate max-w-[180px] hidden md:table-cell text-muted-foreground">{r.name}</td>
-                    <td className="px-2 py-1.5 hidden sm:table-cell text-muted-foreground text-[10px]">{r.sector}</td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-3 py-2 truncate max-w-[220px] hidden md:table-cell text-sm text-muted-foreground">{r.name}</td>
+                    <td className="px-3 py-2 hidden sm:table-cell text-xs text-muted-foreground">{r.sector}</td>
+                    <td className="px-3 py-2">
                       <span
                         className={cn(
-                          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                          "inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold",
                           r.pattern.tone === "success" ? "bg-success/15 text-success"
                           : r.pattern.tone === "warning" ? "bg-amber-500/15 text-amber-400"
                           : r.pattern.tone === "danger" ? "bg-destructive/15 text-destructive"
@@ -469,7 +469,7 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                     <ExCell v={r.ex6m} className="hidden sm:table-cell" />
                     <ExCell v={r.ex12m} className="hidden md:table-cell" />
                     <td className={cn(
-                      "px-2 py-1.5 text-right tabular-nums font-bold w-14",
+                      "px-3 py-2 text-right tabular-nums font-bold text-base w-16",
                       r.rsRating >= 90 ? "text-success" : r.rsRating >= 70 ? "text-foreground" : "text-muted-foreground",
                     )}>
                       {r.rsRating}
@@ -478,7 +478,7 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-3 py-8 text-center text-xs text-muted-foreground">
+                    <td colSpan={10} className="px-3 py-8 text-center text-sm text-muted-foreground">
                       필터 조건에 맞는 종목이 없습니다.
                     </td>
                   </tr>
@@ -487,7 +487,7 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
             </table>
           </div>
           {sorted.length > 300 && (
-            <div className="border-t border-border/40 px-3 py-2 text-center text-[10px] text-muted-foreground">
+            <div className="border-t border-border/40 px-3 py-2 text-center text-xs text-muted-foreground">
               상위 300개 표시 · 필터를 좁혀서 확인하세요.
             </div>
           )}
@@ -505,13 +505,13 @@ function ExCell({
   className,
 }: { v: number | null; bold?: boolean; className?: string }) {
   if (v === null) {
-    return <td className={cn("px-2 py-1.5 text-right text-muted-foreground/60", className)}>-</td>;
+    return <td className={cn("px-3 py-2 text-right text-sm text-muted-foreground/60", className)}>-</td>;
   }
   const up = v >= 0;
   return (
     <td
       className={cn(
-        "px-2 py-1.5 text-right tabular-nums",
+        "px-3 py-2 text-right tabular-nums text-sm",
         bold && "font-semibold",
         up ? "text-success" : "text-destructive",
         className,
