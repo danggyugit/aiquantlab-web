@@ -49,13 +49,28 @@ export default async function MacroPage() {
   const b_hy = latestPoint(macro.hy_oas);
   const b_fed = latestPoint(macro.fed_funds);
   const b_walcl = latestPoint(macro.walcl);
-  const b_dgs10 = latestPoint(macro.dgs10);
+  const b_dgs3mo = latestPoint(macro.dgs3mo);
   const b_dgs2 = latestPoint(macro.dgs2);
+  const b_dgs5 = latestPoint(macro.dgs5);
+  const b_dgs10 = latestPoint(macro.dgs10);
+  const b_dgs30 = latestPoint(macro.dgs30);
   const spread = b_dgs10 && b_dgs2 ? b_dgs10.value - b_dgs2.value : null;
+  const spread_10y3m = b_dgs10 && b_dgs3mo ? b_dgs10.value - b_dgs3mo.value : null;
   const b_cpi = latestPoint(cpiYoY);
   const b_pce = latestPoint(pceYoY);
   const b_dxy = latestPoint(macro.dxy);
   const b_wti = latestPoint(macro.wti);
+  const b_copper = latestPoint(macro.copper);
+  const b_natgas = latestPoint(macro.natgas);
+
+  // Current yield curve for the "shape" chart
+  const yieldCurve = [
+    b_dgs3mo && { tenor: "3M", label: "3개월", value: b_dgs3mo.value },
+    b_dgs2 && { tenor: "2Y", label: "2년", value: b_dgs2.value },
+    b_dgs5 && { tenor: "5Y", label: "5년", value: b_dgs5.value },
+    b_dgs10 && { tenor: "10Y", label: "10년", value: b_dgs10.value },
+    b_dgs30 && { tenor: "30Y", label: "30년", value: b_dgs30.value },
+  ].filter((p): p is { tenor: string; label: string; value: number } => !!p);
 
   // SPY series for Net Liquidity overlay — reuse from VIX history date range
   // (heatmap cache has recent SPY close via breadth). For a proper overlay,
@@ -247,17 +262,41 @@ export default async function MacroPage() {
             </CardHeader>
             <CardContent>
               <TreasuryChart dgs10={macro.dgs10?.data ?? []} dgs2={macro.dgs2?.data ?? []} />
-              {b_dgs10 && b_dgs2 && spread !== null && (
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <MiniMetric label="10Y" value={`${b_dgs10.value.toFixed(2)}%`} />
-                  <MiniMetric label="2Y" value={`${b_dgs2.value.toFixed(2)}%`} />
+
+              {/* Full yield curve shape (all tenors we have) */}
+              {yieldCurve.length >= 3 && (
+                <div className="mt-4 rounded-lg border border-border/40 bg-card/40 p-3">
+                  <div className="mb-2 text-[11px] font-semibold text-muted-foreground">
+                    현재 수익률 곡선 (Yield Curve)
+                  </div>
+                  <YieldCurveChart points={yieldCurve} />
+                </div>
+              )}
+
+              {/* All tenor tiles + spreads */}
+              <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {b_dgs3mo && <MiniMetric label="3M" value={`${b_dgs3mo.value.toFixed(2)}%`} />}
+                {b_dgs2 && <MiniMetric label="2Y" value={`${b_dgs2.value.toFixed(2)}%`} />}
+                {b_dgs5 && <MiniMetric label="5Y" value={`${b_dgs5.value.toFixed(2)}%`} />}
+                {b_dgs10 && <MiniMetric label="10Y" value={`${b_dgs10.value.toFixed(2)}%`} />}
+                {b_dgs30 && <MiniMetric label="30Y" value={`${b_dgs30.value.toFixed(2)}%`} />}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {spread !== null && (
                   <MiniMetric
-                    label="Spread"
+                    label="Spread 10Y−2Y"
                     value={`${spread.toFixed(2)}%`}
                     tone={spread < 0 ? "danger" : "neutral"}
                   />
-                </div>
-              )}
+                )}
+                {spread_10y3m !== null && (
+                  <MiniMetric
+                    label="Spread 10Y−3M"
+                    value={`${spread_10y3m.toFixed(2)}%`}
+                    tone={spread_10y3m < 0 ? "danger" : "neutral"}
+                  />
+                )}
+              </div>
               <Interpretation
                 direction="neutral"
                 status={spread !== null && spread >= 0 ? "bullish" : "bearish"}
@@ -371,8 +410,114 @@ export default async function MacroPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Copper + Natural Gas — leading cyclical indicators */}
+        {(macro.copper || macro.natgas) && (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {macro.copper && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">🥉 Copper (Dr. Copper)</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    최신 ${b_copper ? b_copper.value.toFixed(2) : "-"} / lb · 산업 수요 선행 지표
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <MacroAreaChart
+                    data={macro.copper?.data ?? []}
+                    color="oklch(0.65 0.12 40)"
+                    height={220}
+                    format="raw"
+                  />
+                  <Interpretation
+                    direction="up_bullish"
+                    status={statusFromThreshold(b_copper?.value, 4, 3, "higher-better")}
+                    note="구리 = 경기 선행 지표. 상승 = 제조업·건설 수요 강함 (경기 확장), 하락 = 수요 위축 (경기 둔화)."
+                  />
+                </CardContent>
+              </Card>
+            )}
+            {macro.natgas && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">🔥 Natural Gas (Henry Hub)</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    최신 ${b_natgas ? b_natgas.value.toFixed(2) : "-"} / MMBtu · 겨울철 급등 유의
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <MacroAreaChart
+                    data={macro.natgas?.data ?? []}
+                    color="oklch(0.72 0.15 60)"
+                    height={220}
+                    format="raw"
+                  />
+                  <Interpretation
+                    direction="neutral"
+                    status="neutral"
+                    note="유틸리티·화학·비료 원가에 직접 반영. $6+ 지속 = 인플레 압박, $2 이하 = 잉여 공급."
+                  />
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </Section>
     </div>
+  );
+}
+
+// Simple SVG yield curve — no chart lib overhead
+function YieldCurveChart({ points }: { points: Array<{ tenor: string; label: string; value: number }> }) {
+  if (points.length < 2) return null;
+  const width = 600;
+  const height = 140;
+  const pad = { top: 12, right: 12, bottom: 30, left: 40 };
+  const values = points.map((p) => p.value);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const xStep = innerW / (points.length - 1);
+  const yAt = (v: number) => pad.top + innerH - ((v - minV) / range) * innerH;
+  const path = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${pad.left + i * xStep} ${yAt(p.value)}`)
+    .join(" ");
+  const isInverted = points[0].value > points[points.length - 1].value;
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full">
+      <path d={path} stroke={isInverted ? "oklch(0.65 0.22 25)" : "oklch(0.72 0.19 155)"} strokeWidth={2.5} fill="none" />
+      {points.map((p, i) => (
+        <g key={p.tenor}>
+          <circle cx={pad.left + i * xStep} cy={yAt(p.value)} r={4} fill="var(--foreground)" />
+          <text
+            x={pad.left + i * xStep}
+            y={yAt(p.value) - 8}
+            textAnchor="middle"
+            fontSize="10"
+            fill="var(--foreground)"
+            fontWeight="bold"
+          >
+            {p.value.toFixed(2)}%
+          </text>
+          <text
+            x={pad.left + i * xStep}
+            y={height - 8}
+            textAnchor="middle"
+            fontSize="10"
+            fill="var(--muted-foreground)"
+          >
+            {p.tenor}
+          </text>
+        </g>
+      ))}
+      {isInverted && (
+        <text x={width - pad.right} y={pad.top + 8} textAnchor="end" fontSize="10" fill="oklch(0.65 0.22 25)" fontWeight="bold">
+          ⚠️ 역전 (Inverted) — 침체 선행 신호
+        </text>
+      )}
+    </svg>
   );
 }
 

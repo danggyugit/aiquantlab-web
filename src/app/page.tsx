@@ -142,6 +142,25 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* Global Indices + FX — cross-market snapshot */}
+      {(snapshot.global_indices || snapshot.fx) && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold">Global Markets</h2>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+            {snapshot.global_indices && Object.entries(snapshot.global_indices).slice(0, 6).map(([key, q]) => (
+              <QuoteTile key={key} label={q.label} value={q.current} avg={q.avg} suffix="" digits={q.current > 1000 ? 0 : 2} />
+            ))}
+          </div>
+          {snapshot.fx && (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {Object.entries(snapshot.fx).map(([key, q]) => (
+                <QuoteTile key={key} label={q.label} value={q.current} avg={q.avg} suffix="" digits={q.current > 100 ? 1 : 4} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Heatmap (period-toggleable · sector strip + treemap) */}
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -234,6 +253,34 @@ export default async function Home() {
           </a>
         </div>
       </footer>
+    </div>
+  );
+}
+
+function QuoteTile({
+  label,
+  value,
+  avg,
+  suffix = "",
+  digits = 2,
+}: {
+  label: string;
+  value: number;
+  avg: number;
+  suffix?: string;
+  digits?: number;
+}) {
+  const pct = ((value - avg) / avg) * 100;
+  const isUp = pct >= 0;
+  return (
+    <div className="rounded-lg border border-border/40 bg-card/40 px-2.5 py-2">
+      <div className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-sm font-bold tabular-nums">
+        {digits === 0 ? value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : value.toFixed(digits)}{suffix}
+      </div>
+      <div className={cn("text-[10px] font-semibold tabular-nums", isUp ? "text-success" : "text-destructive")}>
+        {isUp ? "+" : ""}{pct.toFixed(2)}%
+      </div>
     </div>
   );
 }

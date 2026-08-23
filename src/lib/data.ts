@@ -77,7 +77,13 @@ export type Commodities = {
   dxy: Commodity;
   gold: Commodity;
   oil_wti: Commodity;
+  copper?: Commodity;
 };
+
+/** Named index/FX quote — same shape as Commodity but relabelled. */
+export type MarketQuote = Commodity;
+export type GlobalIndices = Record<string, MarketQuote>;
+export type FxPairs = Record<string, MarketQuote>;
 
 export type Breadth = {
   spy_close: number;
@@ -102,6 +108,8 @@ export type MarketSnapshot = {
   commodities: Commodities;
   breadth: Breadth;
   spy_returns?: TickerReturns;   // SPY per-period returns (RS baseline)
+  global_indices?: GlobalIndices;
+  fx?: FxPairs;
   risk_on_off?: unknown;
   fear_greed?: FearGreed;
 };
@@ -411,8 +419,10 @@ export function getMacroSeries(slug: string): Promise<MacroSeries> {
 // Slugs mirror stock-dashboard/streamlit_app/scripts/cache_macro_data.py:SERIES.
 export const MACRO_SLUGS = [
   "walcl", "rrp", "tga", "reserves", "hy_oas",
-  "m1", "m2", "fed_funds", "dgs2", "dgs10",
-  "cpi", "core_pce", "dxy", "wti",
+  "m1", "m2", "fed_funds",
+  "dgs3mo", "dgs2", "dgs5", "dgs10", "dgs30",
+  "cpi", "core_pce",
+  "dxy", "wti", "copper", "natgas",
   // "gold" temporarily excluded — FRED series ID needs migration
 ] as const;
 
