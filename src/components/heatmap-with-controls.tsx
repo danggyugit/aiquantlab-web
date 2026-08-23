@@ -15,6 +15,7 @@ import { FinvizHeatmap, type FinvizTicker } from "@/components/finviz-heatmap";
 type TickerInput = {
   ticker: string;
   sector: string;
+  industry?: string | null;   // finer-grained bucket for the industry table
   marketCap: number;
   returns: Record<string, number | null | undefined>; // {1d,1w,1m,3m,6m,ytd,1y}
 };
@@ -42,19 +43,28 @@ export function HeatmapWithControls({
   sectors,
   heatmapHeight = 900,
   defaultPeriod = "1d",
+  heatmapLimit = 500,
+  showIndustryTable = true,
 }: {
   tickers: TickerInput[];
   sectors: Sector[];
   heatmapHeight?: number;
   defaultPeriod?: HeatmapPeriod;
+  /** Top-N by market cap that go into the treemap (industry table always uses all). */
+  heatmapLimit?: number;
+  /** Show the industry-level breakdown table below the heatmap. */
+  showIndustryTable?: boolean;
 }) {
   const [period, setPeriod] = useState<HeatmapPeriod>(defaultPeriod);
 
   const meta = PERIOD_META.find((p) => p.key === period) ?? PERIOD_META[0];
 
   // Ticker data filtered by whether that period is available for that ticker.
+  // Only top-N by market cap go into the treemap (density control).
   const heatmapData: FinvizTicker[] = useMemo(() => {
-    return tickers
+    return [...tickers]
+      .sort((a, b) => b.marketCap - a.marketCap)
+      .slice(0, heatmapLimit)
       .map((t) => {
         const change = t.returns?.[period];
         if (change === null || change === undefined) return null;
@@ -66,7 +76,38 @@ export function HeatmapWithControls({
         } satisfies FinvizTicker;
       })
       .filter((x): x is FinvizTicker => x !== null);
-  }, [tickers, period]);
+  }, [tickers, period, heatmapLimit]);
+
+  // Industry aggregation — every ticker (not just heatmap top-N).
+  // Weighted by market cap so mega-caps drive the sector-industry read.
+  type IndustryRow = {
+    industry: string;
+    sector: string;
+    count: number;
+    totalCap: number;
+    weightedChange: number;   // sum(marketCap * change)
+  };
+  const industryRows = useMemo(() => {
+    if (!showIndustryTable) return [];
+    const map = new Map<string, IndustryRow>();
+    for (const t of tickers) {
+      if (!t.industry || !t.marketCap) continue;
+      const change = t.returns?.[period];
+      if (change === null || change === undefined) continue;
+      const key = t.industry;
+      let row = map.get(key);
+      if (!row) {
+        row = { industry: t.industry, sector: t.sector, count: 0, totalCap: 0, weightedChange: 0 };
+        map.set(key, row);
+      }
+      row.count += 1;
+      row.totalCap += t.marketCap;
+      row.weightedChange += t.marketCap * Number(change);
+    }
+    return Array.from(map.values())
+      .map((r) => ({ ...r, wAvg: r.totalCap > 0 ? r.weightedChange / r.totalCap : 0 }))
+      .sort((a, b) => b.wAvg - a.wAvg);
+  }, [tickers, period, showIndustryTable]);
 
   // Sector data: pull the field for the selected period.
   const sectorRows = useMemo(() => {
@@ -170,6 +211,61 @@ export function HeatmapWithControls({
           박스 크기 = 시가총액 · 색상 = {meta.label} 등락 · 클릭 시 상세 이동
         </p>
       </section>
+
+      {/* Industry breakdown (finer than sector; period-aware) */}
+      {showIndustryTable && industryRows.length > 0 && (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">
+              Industry Breakdown <span className="ml-1 text-xs font-normal text-muted-foreground">({meta.label} 기준 · {industryRows.length}개 산업)</span>
+            </h2>
+            <span className="text-[11px] text-muted-foreground">시가총액 가중 평균 · 스크롤 가능</span>
+          </div>
+          <div className="max-h-[600px] overflow-y-auto rounded-lg border border-border/40 bg-card/40">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-left text-[11px] text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 w-8">#</th>
+                  <th className="px-3 py-2">Industry</th>
+                  <th className="px-3 py-2 hidden sm:table-cell">Sector</th>
+                  <th className="px-3 py-2 text-right w-16">종목</th>
+                  <th className="px-3 py-2 text-right w-24">가중 평균</th>
+                  <th className="px-3 py-2 text-right w-24 hidden md:table-cell">총 시총</th>
+                </tr>
+              </thead>
+              <tbody>
+                {industryRows.map((r, i) => {
+                  const isUp = r.wAvg >= 0;
+                  return (
+                    <tr key={r.industry} className="border-b border-border/30 hover:bg-muted/20">
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
+                      <td className="px-3 py-1.5 font-medium">{r.industry}</td>
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground hidden sm:table-cell">{r.sector}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-xs text-muted-foreground">{r.count}</td>
+                      <td className={cn(
+                        "px-3 py-1.5 text-right tabular-nums font-semibold",
+                        isUp ? "text-success" : "text-destructive",
+                      )}>
+                        {isUp ? "+" : ""}{r.wAvg.toFixed(2)}%
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-xs text-muted-foreground hidden md:table-cell">
+                        {fmtCap(r.totalCap)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
+}
+
+function fmtCap(cap: number): string {
+  if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`;
+  if (cap >= 1e9)  return `$${(cap / 1e9).toFixed(2)}B`;
+  if (cap >= 1e6)  return `$${(cap / 1e6).toFixed(1)}M`;
+  return `$${cap.toFixed(0)}`;
 }

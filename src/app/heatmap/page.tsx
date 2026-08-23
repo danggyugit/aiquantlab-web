@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TrendingDown, TrendingUp } from "lucide-react";
-import { getHeatmap, getMarketSnapshot, latestQuote, fmtMarketCap } from "@/lib/data";
+import { getHeatmap, getMarketSnapshot, getStocksMeta, latestQuote, fmtMarketCap } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { HeatmapWithControls } from "@/components/heatmap-with-controls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,10 +19,13 @@ export const revalidate = 900;
  *   5. Top Movers — Top 10 Gainers / Top 10 Losers (2-column)
  */
 export default async function HeatmapPage() {
-  const [snapshot, heatmap] = await Promise.all([
+  const [snapshot, heatmap, stocks] = await Promise.all([
     getMarketSnapshot(),
     getHeatmap(),
+    getStocksMeta(),
   ]);
+  // ticker → industry lookup (stocks.json has industry; heatmap.json only has sector).
+  const industryByTicker = new Map(stocks.map((s) => [s.ticker, s.industry]));
 
   // Compute enriched ticker rows (used for Sector Summary + Top Movers cards)
   const enriched = Object.entries(heatmap.tickers)
@@ -40,17 +43,17 @@ export default async function HeatmapPage() {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // Ticker inputs for the interactive heatmap (top 500 by market cap, with returns)
+  // Ticker inputs — pass ALL tickers with returns (client component slices
+  // top-500 for the heatmap and uses the full set for industry aggregation).
   const tickerInputs = Object.entries(heatmap.tickers)
     .filter(([, data]) => data.sector && data.market_cap && data.returns)
     .map(([ticker, data]) => ({
       ticker,
       sector: data.sector,
+      industry: industryByTicker.get(ticker) ?? null,
       marketCap: data.market_cap,
       returns: (data.returns ?? {}) as Record<string, number | null | undefined>,
-    }))
-    .sort((a, b) => b.marketCap - a.marketCap)
-    .slice(0, 500);
+    }));
 
   // Section 4: Sector Summary (Streamlit's dataframe)
   const sectorMap = new Map<

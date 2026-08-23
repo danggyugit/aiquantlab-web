@@ -154,6 +154,8 @@ export default async function Home() {
           tickers={heatmapNodes}
           sectors={snapshot.sectors}
           heatmapHeight={620}
+          heatmapLimit={200}
+          showIndustryTable={false}
         />
       </section>
 
