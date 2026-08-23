@@ -1,17 +1,19 @@
 /**
  * Fetch cached JSON snapshots from the stock-dashboard repo (GitHub raw).
  *
- * The Streamlit backend precomputes these files via a Windows scheduler and
- * commits them to `streamlit_app/data/cache/`. We reuse the same URLs so we
- * don't duplicate the data pipeline.
+ * The Streamlit backend precomputes these files via macOS launchd
+ * (~/Library/LaunchAgents/com.danggyu.stockdash.*.plist) and commits them
+ * to `streamlit_app/data/cache/`. We reuse the same URLs so we don't
+ * duplicate the data pipeline.
  *
- * TTL: 15 min (900s) — matches Streamlit's @st.cache_data(ttl=900).
+ * TTL: 10 min. Shorter than the launchd schedule so the site catches
+ * fresh commits promptly.
  */
 
 const CACHE_BASE =
   "https://raw.githubusercontent.com/danggyugit/stock-dashboard/main/streamlit_app/data/cache";
 
-const REVALIDATE_SECONDS = 900;
+const REVALIDATE_SECONDS = 600;
 
 async function fetchCache<T>(filename: string): Promise<T> {
   const res = await fetch(`${CACHE_BASE}/${filename}`, {
