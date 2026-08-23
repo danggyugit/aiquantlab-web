@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { BacktestPreset } from "@/lib/data";
+import { useEffect, useState } from "react";
+import type { BacktestPreset, ForwardEval, ForwardSnapshot } from "@/lib/data";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +12,14 @@ import { IcChart } from "./ic-chart";
 import { ImportanceChart } from "./importance-chart";
 import { AlertCircle } from "lucide-react";
 
-// Mirrors Streamlit's 8-tab result panel (Summary / Live Picks / Performance / IC / History / Importance / Heatmap / Tracking).
+// Raw GitHub URL for forward-test cache. Same base as fetchCache in data.ts —
+// duplicated here because we're in a client component and can't import the
+// server-side fetcher (which uses Next fetch cache).
+const FORWARD_EVAL_URL = (presetId: string) =>
+  `https://raw.githubusercontent.com/danggyugit/stock-dashboard/main/streamlit_app/data/cache/forward_test/eval_${presetId}.json`;
+
+// Mirrors Streamlit's 8-tab result panel + "Live 검증" for the out-of-sample
+// forward evaluator written by scripts/compute_forward_returns.py.
 export function ResultTabs({
   preset,
   exact,
@@ -23,6 +31,33 @@ export function ResultTabs({
 }) {
   const s = preset.summary;
   const full = preset.full;
+
+  // Lazy fetch of the forward-test eval file. Not every preset has one yet
+  // (needs ≥5 snapshots aged ≥21 trading days), so 404 → "still collecting".
+  const [forwardEval, setForwardEval] = useState<ForwardEval | null>(null);
+  const [forwardState, setForwardState] = useState<"idle" | "loading" | "empty" | "ready">("idle");
+  useEffect(() => {
+    let cancelled = false;
+    setForwardState("loading");
+    setForwardEval(null);
+    fetch(FORWARD_EVAL_URL(preset.preset_id), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: ForwardEval | null) => {
+        if (cancelled) return;
+        if (data && data.windows) {
+          setForwardEval(data);
+          setForwardState("ready");
+        } else {
+          setForwardState("empty");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setForwardState("empty");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [preset.preset_id]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -50,6 +85,14 @@ export function ResultTabs({
           <TabsTrigger value="importance" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Importance</TabsTrigger>
           <TabsTrigger value="heatmap" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Heatmap</TabsTrigger>
           <TabsTrigger value="tracking" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Tracking</TabsTrigger>
+          <TabsTrigger value="forward" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            Live 검증
+            {forwardState === "ready" && forwardEval && (
+              <span className="ml-1 text-[10px] opacity-70">
+                ({(forwardEval.windows["21d"]?.series?.length ?? 0)})
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* --- Tab 1: Summary --- */}
@@ -324,6 +367,11 @@ export function ResultTabs({
           ) : (
             <NoData label="히트맵 데이터 없음" />
           )}
+        </TabsContent>
+
+        {/* --- Tab 9: Live 검증 (out-of-sample forward test) --- */}
+        <TabsContent value="forward" className="mt-4 flex flex-col gap-4">
+          <ForwardTestPanel state={forwardState} evalData={forwardEval} />
         </TabsContent>
 
         {/* --- Tab 8: Tracking --- */}
@@ -721,4 +769,209 @@ function computeIcPositiveRate(records: import("@/lib/data").IcRecord[]): number
   const vals = records.map((r) => r.IC ?? r.IC_RF ?? 0);
   const positives = vals.filter((v) => v > 0).length;
   return (positives / vals.length) * 100;
+}
+
+// ---------- Live 검증 (out-of-sample forward test) ----------
+
+function ForwardTestPanel({
+  state,
+  evalData,
+}: {
+  state: "idle" | "loading" | "empty" | "ready";
+  evalData: ForwardEval | null;
+}) {
+  if (state === "loading" || state === "idle") {
+    return (
+      <Card>
+        <CardContent className="py-6 text-center text-sm text-muted-foreground">
+          Live 검증 데이터 로딩 중...
+        </CardContent>
+      </Card>
+    );
+  }
+  if (state === "empty" || !evalData) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">🧪 Live 검증 (진행 중)</CardTitle>
+          <CardDescription className="text-xs">
+            실제로 사용자에게 표시된 오늘의 추천이 이후 어떻게 되었는지 out-of-sample로 추적.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border border-dashed border-border/50 p-4 text-center text-xs text-muted-foreground">
+            <div className="text-2xl">📊</div>
+            <div className="mt-2 font-semibold text-foreground">아직 검증 데이터가 부족합니다</div>
+            <div className="mt-1">
+              최소 5개 스냅샷이 T+21 영업일 이상 경과해야 IC·decile·alpha를 계산합니다.
+              <br />매일 프리셋 배치가 실행될 때마다 스냅샷이 쌓이고, 주 1회 forward-return joiner가 돌면서 이 탭이 채워집니다.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Ready — render the 21d window (only one currently emitted by joiner)
+  const w21 = evalData.windows["21d"];
+  if (!w21) return null;
+  const { series, summary } = w21;
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">🧪 Live 검증 · T+21 영업일</CardTitle>
+            <Badge variant="secondary" className="text-[10px]">
+              {series.length}개 스냅샷
+            </Badge>
+          </div>
+          <CardDescription className="text-xs">
+            실제로 표시된 상위 {evalData.top_n_picks}개 추천의 out-of-sample 성과. 백테스트 in-sample IC와 별개.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <ForwardMetric label="평균 IC" value={summary.ic.mean} format="raw" tone={metricTone(summary.ic.mean, 0)} />
+            <ForwardMetric label="IC 양성률" value={summary.ic.positive_rate} format="pct" tone={metricTone(summary.ic.positive_rate, 0.5)} />
+            <ForwardMetric label="Top-N 평균수익" value={summary.top_n_return.mean} format="ret" tone={metricTone(summary.top_n_return.mean, 0)} />
+            <ForwardMetric label="SPY 평균수익" value={summary.spy_return.mean} format="ret" tone="neutral" />
+            <ForwardMetric label="Alpha 평균" value={summary.alpha.mean} format="ret" tone={metricTone(summary.alpha.mean, 0)} />
+          </div>
+          <ForwardIcChart series={series} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">스냅샷별 결과 (최신순)</CardTitle>
+          <CardDescription className="text-xs">
+            각 리밸런싱일에 실제 표시된 픽이 T+21 영업일 후 어떻게 되었는지.
+          </CardDescription>
+        </CardHeader>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="border-b border-border/60 bg-muted/20 text-left text-[10px] text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">추천일</th>
+                <th className="px-3 py-2">평가일</th>
+                <th className="px-3 py-2 text-right">IC</th>
+                <th className="px-3 py-2 text-right hidden sm:table-cell">Decile 스프레드</th>
+                <th className="px-3 py-2 text-right">Top-N</th>
+                <th className="px-3 py-2 text-right">SPY</th>
+                <th className="px-3 py-2 text-right">Alpha</th>
+              </tr>
+            </thead>
+            <tbody>
+              {series.slice().reverse().map((row, i) => (
+                <tr key={`${row.picks_at}-${i}`} className="border-b border-border/30">
+                  <td className="px-3 py-2 text-muted-foreground">{row.picks_at}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{row.eval_date}</td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums", numTone(row.ic))}>
+                    {row.ic !== null ? row.ic.toFixed(3) : "-"}
+                  </td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums hidden sm:table-cell", numTone(row.decile_spread))}>
+                    {row.decile_spread !== null ? fmtRet(row.decile_spread) : "-"}
+                  </td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums", numTone(row.top_n_ret))}>
+                    {row.top_n_ret !== null ? fmtRet(row.top_n_ret) : "-"}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    {row.spy_ret !== null ? fmtRet(row.spy_ret) : "-"}
+                  </td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums font-semibold", numTone(row.alpha))}>
+                    {row.alpha !== null ? fmtRet(row.alpha) : "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="border-t border-border/30 px-3 py-2 text-[10px] text-muted-foreground">
+          업데이트: {evalData.updated_at.slice(0, 10)} · 기록 스크립트:
+          <code className="mx-1 text-[10px]">compute_forward_returns.py</code>
+        </p>
+      </Card>
+    </>
+  );
+}
+
+function ForwardMetric({
+  label,
+  value,
+  format,
+  tone,
+}: {
+  label: string;
+  value: number | undefined;
+  format: "raw" | "pct" | "ret";
+  tone: "success" | "danger" | "neutral";
+}) {
+  const color =
+    tone === "success" ? "text-success" : tone === "danger" ? "text-destructive" : "text-foreground";
+  let display = "-";
+  if (value !== undefined && value !== null && Number.isFinite(value)) {
+    if (format === "raw") display = value.toFixed(3);
+    else if (format === "pct") display = `${(value * 100).toFixed(0)}%`;
+    else display = fmtRet(value);
+  }
+  return (
+    <div className="rounded-lg border border-border/40 bg-card/40 px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={cn("mt-0.5 text-lg font-bold tabular-nums", color)}>{display}</div>
+    </div>
+  );
+}
+
+function ForwardIcChart({ series }: { series: ForwardSnapshot[] }) {
+  // Simple bar-style IC-per-snapshot visual — reuses Recharts via IcChart is
+  // overkill for a small array. We render a compact SVG-free stacked bar.
+  const max = Math.max(...series.map((s) => Math.abs(s.ic ?? 0)), 0.1);
+  return (
+    <div className="flex flex-col gap-0.5">
+      {series.map((row) => {
+        const ic = row.ic ?? 0;
+        const widthPct = Math.min(100, (Math.abs(ic) / max) * 100);
+        const positive = ic >= 0;
+        return (
+          <div key={row.picks_at} className="flex items-center gap-2 text-[10px]">
+            <span className="w-16 shrink-0 text-muted-foreground tabular-nums">{row.picks_at.slice(5)}</span>
+            <div className="relative flex-1 h-3">
+              <div className="absolute inset-y-0 left-1/2 w-px bg-border/60" />
+              <div
+                className={cn(
+                  "absolute top-0 h-full rounded-sm",
+                  positive ? "bg-success/60" : "bg-destructive/60",
+                )}
+                style={{
+                  left: positive ? "50%" : `${50 - widthPct / 2}%`,
+                  width: `${widthPct / 2}%`,
+                }}
+              />
+            </div>
+            <span className={cn("w-10 text-right tabular-nums", numTone(ic))}>
+              {ic.toFixed(2)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function metricTone(v: number | undefined, threshold: number): "success" | "danger" | "neutral" {
+  if (v === undefined || v === null || !Number.isFinite(v)) return "neutral";
+  if (v > threshold) return "success";
+  if (v < threshold) return "danger";
+  return "neutral";
+}
+
+function numTone(v: number | null | undefined): string {
+  if (v === undefined || v === null || !Number.isFinite(v)) return "text-muted-foreground";
+  return v >= 0 ? "text-success" : "text-destructive";
+}
+
+function fmtRet(v: number): string {
+  return `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
 }

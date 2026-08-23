@@ -417,6 +417,52 @@ export function getBacktestPreset(id: string): Promise<BacktestPreset> {
   return fetchCache<BacktestPreset>(`backtests/${id}.json`);
 }
 
+// ── Live Forward Test (out-of-sample evaluation of served picks) ─
+// Produced by stock-dashboard/streamlit_app/scripts/compute_forward_returns.py.
+// Not every preset has an eval file — the joiner needs ≥5 snapshots aged
+// ≥21 trading days before writing anything.
+
+export type ForwardStat = {
+  n: number;
+  mean?: number;
+  std?: number;
+  positive_rate?: number;
+};
+
+export type ForwardSnapshot = {
+  picks_at: string;
+  eval_date: string;
+  n_ranked: number;
+  ic: number | null;
+  decile_spread: number | null;
+  top_n_ret: number | null;
+  spy_ret: number | null;
+  alpha: number | null;
+};
+
+export type ForwardEval = {
+  preset_id: string;
+  windows: Record<string, { series: ForwardSnapshot[]; summary: {
+    ic: ForwardStat;
+    decile_spread: ForwardStat;
+    top_n_return: ForwardStat;
+    spy_return: ForwardStat;
+    alpha: ForwardStat;
+  } }>;
+  updated_at: string;
+  min_eligible_entries: number;
+  top_n_picks: number;
+};
+
+/** Tolerant fetcher — returns null if the preset has no eval file yet. */
+export async function getForwardEval(presetId: string): Promise<ForwardEval | null> {
+  try {
+    return await fetchCache<ForwardEval>(`forward_test/eval_${presetId}.json`);
+  } catch {
+    return null;
+  }
+}
+
 export async function getAllBacktestPresets(): Promise<BacktestPreset[]> {
   // Not all 50 presets may exist yet (initial rollout, or Windows scheduler
   // partially failed). Fetch tolerantly and filter out missing ones so the
