@@ -101,11 +101,15 @@ export function AiEarningsSummary(props: Props) {
   );
 }
 
-// Minimal markdown → HTML renderer (same as inline version on the server).
+// Minimal markdown → HTML renderer. Handles the formats Gemini actually
+// produces for our prompt: ## headings, **bold**, - bullets, and also
+// "1. Text" pseudo-headings when the model omits the ## prefix.
 function markdownToHtml(md: string): string {
   const lines = md.split("\n");
   const out: string[] = [];
   let inList = false;
+  // Match "1. 실적 품질" (with or without ## prefix stripped by the model)
+  const pseudoHeadingRe = /^(\d+)\.\s+([가-힣A-Za-z].{0,40})$/;
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) {
@@ -123,8 +127,15 @@ function markdownToHtml(md: string): string {
       if (!inList) { out.push("<ul>"); inList = true; }
       out.push(`<li>${l.slice(2)}</li>`);
     } else {
-      if (inList) { out.push("</ul>"); inList = false; }
-      out.push(`<p>${l}</p>`);
+      // Fallback: standalone numbered line = section heading
+      const m = pseudoHeadingRe.exec(l);
+      if (m) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        out.push(`<h2>${m[1]}. ${m[2]}</h2>`);
+      } else {
+        if (inList) { out.push("</ul>"); inList = false; }
+        out.push(`<p>${l}</p>`);
+      }
     }
   }
   if (inList) out.push("</ul>");
