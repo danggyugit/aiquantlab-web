@@ -55,28 +55,8 @@ export default async function HeatmapPage() {
       returns: (data.returns ?? {}) as Record<string, number | null | undefined>,
     }));
 
-  // Section 4: Sector Summary (Streamlit's dataframe)
-  const sectorMap = new Map<
-    string,
-    { count: number; sumChange: number; totalCap: number }
-  >();
-  for (const e of enriched) {
-    const cur = sectorMap.get(e.sector) ?? { count: 0, sumChange: 0, totalCap: 0 };
-    cur.count += 1;
-    cur.sumChange += e.changePct;
-    cur.totalCap += e.marketCap;
-    sectorMap.set(e.sector, cur);
-  }
-  const sectorSummary = Array.from(sectorMap.entries())
-    .map(([sector, v]) => ({
-      sector,
-      count: v.count,
-      avgChangePct: v.sumChange / v.count,
-      totalCap: v.totalCap,
-    }))
-    .sort((a, b) => b.totalCap - a.totalCap);
-
-  // Section 5: Top Movers (10 gainers, 10 losers)
+  // Top Movers (10 gainers, 10 losers) — 1d based, uses latestQuote from cache prices
+  // (Sector Summary + Industry Breakdown live inside HeatmapWithControls now)
   const gainers = [...enriched].sort((a, b) => b.changePct - a.changePct).slice(0, 10);
   const losers = [...enriched].sort((a, b) => a.changePct - b.changePct).slice(0, 10);
 
@@ -113,7 +93,8 @@ export default async function HeatmapPage() {
         </CardContent>
       </Card>
 
-      {/* ═══ 2. Period selector + Sector Performance + Market Heatmap (all together) ═══ */}
+      {/* ═══ 2. Period selector + Sector Performance + Market Heatmap
+             + Sector Summary + Industry Breakdown (all period-aware) ═══ */}
       <HeatmapWithControls
         tickers={tickerInputs}
         sectors={snapshot.sectors}
@@ -121,46 +102,7 @@ export default async function HeatmapPage() {
         defaultPeriod="1d"
       />
 
-      {/* ═══ 5. Sector Summary (Streamlit's dataframe) ═══ */}
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Sector Summary</h2>
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Sector</th>
-                  <th className="px-3 py-2 text-right">종목 수</th>
-                  <th className="px-3 py-2 text-right">평균 변화율</th>
-                  <th className="px-3 py-2 text-right">총 시가총액</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sectorSummary.map((s) => (
-                  <tr key={s.sector} className="border-b border-border/30 hover:bg-muted/20">
-                    <td className="px-3 py-2 font-semibold">{s.sector}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{s.count}</td>
-                    <td
-                      className={cn(
-                        "px-3 py-2 text-right tabular-nums font-semibold",
-                        s.avgChangePct >= 0 ? "text-success" : "text-destructive",
-                      )}
-                    >
-                      {s.avgChangePct >= 0 ? "+" : ""}
-                      {s.avgChangePct.toFixed(2)}%
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {fmtMarketCap(s.totalCap)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </section>
-
-      {/* ═══ 6. Top Movers ═══ */}
+      {/* ═══ 3. Top Movers ═══ */}
       <section>
         <h2 className="mb-3 text-lg font-semibold">Top Movers</h2>
         <div className="grid gap-3 lg:grid-cols-2">

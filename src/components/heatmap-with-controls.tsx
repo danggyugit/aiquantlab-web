@@ -78,27 +78,31 @@ export function HeatmapWithControls({
       .filter((x): x is FinvizTicker => x !== null);
   }, [tickers, period, heatmapLimit]);
 
-  // Industry aggregation — every ticker (not just heatmap top-N).
-  // Weighted by market cap so mega-caps drive the sector-industry read.
-  type IndustryRow = {
-    industry: string;
-    sector: string;
+  // Aggregation helper — group tickers by a key, market-cap-weighted change.
+  type AggRow<K extends string> = { [k in K]: string } & {
     count: number;
     totalCap: number;
-    weightedChange: number;   // sum(marketCap * change)
+    weightedChange: number;
+    wAvg: number;
+    sector?: string;    // only industry rows carry parent sector
   };
-  const industryRows = useMemo(() => {
-    if (!showIndustryTable) return [];
-    const map = new Map<string, IndustryRow>();
+  function aggregateBy<K extends string>(
+    keyOf: (t: TickerInput) => string | null | undefined,
+    keyField: K,
+    withSector = false,
+  ): AggRow<K>[] {
+    type Row = AggRow<K>;
+    const map = new Map<string, Row>();
     for (const t of tickers) {
-      if (!t.industry || !t.marketCap) continue;
+      const k = keyOf(t);
+      if (!k || !t.marketCap) continue;
       const change = t.returns?.[period];
       if (change === null || change === undefined) continue;
-      const key = t.industry;
-      let row = map.get(key);
+      let row = map.get(k);
       if (!row) {
-        row = { industry: t.industry, sector: t.sector, count: 0, totalCap: 0, weightedChange: 0 };
-        map.set(key, row);
+        row = { [keyField]: k, count: 0, totalCap: 0, weightedChange: 0, wAvg: 0 } as Row;
+        if (withSector) row.sector = t.sector;
+        map.set(k, row);
       }
       row.count += 1;
       row.totalCap += t.marketCap;
@@ -107,7 +111,21 @@ export function HeatmapWithControls({
     return Array.from(map.values())
       .map((r) => ({ ...r, wAvg: r.totalCap > 0 ? r.weightedChange / r.totalCap : 0 }))
       .sort((a, b) => b.wAvg - a.wAvg);
-  }, [tickers, period, showIndustryTable]);
+  }
+
+  // Sector Summary — every ticker aggregated by parent sector. Period-aware.
+  const sectorSummary = useMemo(
+    () => aggregateBy((t) => t.sector, "sector", false),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tickers, period],
+  );
+
+  // Industry Breakdown — finer bucket, every ticker.
+  const industryRows = useMemo(
+    () => (showIndustryTable ? aggregateBy((t) => t.industry, "industry", true) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tickers, period, showIndustryTable],
+  );
 
   // Sector data: pull the field for the selected period.
   const sectorRows = useMemo(() => {
@@ -212,6 +230,52 @@ export function HeatmapWithControls({
         </p>
       </section>
 
+      {/* Sector Summary — coarser table (11-ish sectors), period-aware */}
+      {showIndustryTable && sectorSummary.length > 0 && (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">
+              Sector Summary <span className="ml-1 text-xs font-normal text-muted-foreground">({meta.label} 기준 · {sectorSummary.length}개 섹터)</span>
+            </h2>
+            <span className="text-[11px] text-muted-foreground">시가총액 가중 평균</span>
+          </div>
+          <div className="rounded-lg border border-border/40 bg-card/40">
+            <table className="w-full text-sm">
+              <thead className="border-b border-border/60 bg-card text-left text-[11px] text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 w-8">#</th>
+                  <th className="px-3 py-2">Sector</th>
+                  <th className="px-3 py-2 text-right w-20">종목 수</th>
+                  <th className="px-3 py-2 text-right w-24">가중 평균</th>
+                  <th className="px-3 py-2 text-right w-24 hidden md:table-cell">총 시총</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sectorSummary.map((r, i) => {
+                  const isUp = r.wAvg >= 0;
+                  return (
+                    <tr key={r.sector} className="border-b border-border/30 hover:bg-muted/20">
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
+                      <td className="px-3 py-1.5 font-semibold">{(r as { sector: string }).sector}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-xs text-muted-foreground">{r.count}</td>
+                      <td className={cn(
+                        "px-3 py-1.5 text-right tabular-nums font-semibold",
+                        isUp ? "text-success" : "text-destructive",
+                      )}>
+                        {isUp ? "+" : ""}{r.wAvg.toFixed(2)}%
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-xs text-muted-foreground hidden md:table-cell">
+                        {fmtCap(r.totalCap)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* Industry breakdown (finer than sector; period-aware) */}
       {showIndustryTable && industryRows.length > 0 && (
         <section>
@@ -237,9 +301,9 @@ export function HeatmapWithControls({
                 {industryRows.map((r, i) => {
                   const isUp = r.wAvg >= 0;
                   return (
-                    <tr key={r.industry} className="border-b border-border/30 hover:bg-muted/20">
+                    <tr key={(r as { industry: string }).industry} className="border-b border-border/30 hover:bg-muted/20">
                       <td className="px-3 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
-                      <td className="px-3 py-1.5 font-medium">{r.industry}</td>
+                      <td className="px-3 py-1.5 font-medium">{(r as { industry: string }).industry}</td>
                       <td className="px-3 py-1.5 text-xs text-muted-foreground hidden sm:table-cell">{r.sector}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-xs text-muted-foreground">{r.count}</td>
                       <td className={cn(
