@@ -101,6 +101,7 @@ export type MarketSnapshot = {
   sectors: Sector[];
   commodities: Commodities;
   breadth: Breadth;
+  spy_returns?: TickerReturns;   // SPY per-period returns (RS baseline)
   risk_on_off?: unknown;
   fear_greed?: FearGreed;
 };

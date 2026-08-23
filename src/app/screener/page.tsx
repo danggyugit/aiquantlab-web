@@ -2,9 +2,9 @@ import {
   distanceFromHigh,
   getFundamentals,
   getHeatmap,
+  getMarketSnapshot,
   getStocksMeta,
   latestQuote,
-  periodReturn,
 } from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { Badge } from "@/components/ui/badge";
@@ -27,10 +27,11 @@ function upDays(prices: { close: number }[]): number {
  * Reuses the individual clients from the original per-page implementations.
  */
 export default async function ScreenerPage() {
-  const [fund, stocks, heatmap] = await Promise.all([
+  const [fund, stocks, heatmap, snapshot] = await Promise.all([
     getFundamentals(),
     getStocksMeta(),
     getHeatmap(),
+    getMarketSnapshot(),
   ]);
   const stocksMap = new Map(stocks.map((s) => [s.ticker, s]));
 
@@ -63,28 +64,53 @@ export default async function ScreenerPage() {
     })
     .filter((r): r is ScreenerRow => r !== null);
 
-  // ── RS rows (percentile rank of short-term return) ────────────────
+  // ── RS rows: excess return vs SPY per period + 3M percentile ────
+  // SPY baseline from market_snapshot (spy_returns per period).
+  const spyRet = snapshot.spy_returns ?? {};
+  const spy = {
+    "1m":  typeof spyRet["1m"] === "number" ? spyRet["1m"] : 0,
+    "3m":  typeof spyRet["3m"] === "number" ? spyRet["3m"] : 0,
+    "6m":  typeof spyRet["6m"] === "number" ? spyRet["6m"] : 0,
+    "1y":  typeof spyRet["1y"] === "number" ? spyRet["1y"] : 0,
+  };
+
   const rsRaw = Object.entries(heatmap.tickers)
     .map(([ticker, data]) => {
       const meta = stocksMap.get(ticker);
-      const q = latestQuote(data);
-      const ret = periodReturn(data);
-      if (!meta || !q || ret === null) return null;
-      return { ticker, name: data.name, sector: data.sector, capTier: meta.cap_tier, ret };
+      if (!meta || !data.returns) return null;
+      const r = data.returns;
+      const excess = (period: "1m" | "3m" | "6m" | "1y") => {
+        const v = r[period];
+        return typeof v === "number" ? v - spy[period] : null;
+      };
+      return {
+        ticker,
+        name: data.name,
+        sector: data.sector,
+        capTier: meta.cap_tier,
+        ex1m: excess("1m"),
+        ex3m: excess("3m"),
+        ex6m: excess("6m"),
+        ex12m: excess("1y"),
+      };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
-  const rsSorted = [...rsRaw].sort((a, b) => a.ret - b.ret);
-  const rsTotal = rsSorted.length;
+
+  // RS Rating = percentile of 3M excess return across universe (only rows with valid ex3m)
+  const rankable = rsRaw.filter((r) => r.ex3m !== null) as Array<typeof rsRaw[number] & { ex3m: number }>;
+  rankable.sort((a, b) => a.ex3m - b.ex3m);
+  const rsTotal = rankable.length;
   const rsRankMap = new Map<string, number>();
-  rsSorted.forEach((r, i) => rsRankMap.set(r.ticker, Math.round(((i + 1) / rsTotal) * 99)));
+  rankable.forEach((r, i) => rsRankMap.set(r.ticker, Math.max(1, Math.round(((i + 1) / rsTotal) * 99))));
   const rsRows: RsRow[] = rsRaw.map((r) => ({
     ticker: r.ticker,
     name: r.name,
     sector: r.sector,
     capTier: r.capTier,
-    ret1m: r.ret,
-    ret3m: r.ret,
-    ret12m: r.ret,
+    ex1m: r.ex1m,
+    ex3m: r.ex3m,
+    ex6m: r.ex6m,
+    ex12m: r.ex12m,
     rsRating: rsRankMap.get(r.ticker) ?? 50,
   }));
 
