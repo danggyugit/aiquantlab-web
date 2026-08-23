@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 
 /**
  * Client-side fetch for the Gemini earnings summary.
@@ -33,21 +33,29 @@ export function AiEarningsSummary(props: Props) {
     | { kind: "no-key" }
     | { kind: "error"; msg: string }
   >({ kind: "loading" });
+  // Bump to force a re-fetch even when props are identical (busts any
+  // in-memory server cache and any lingering client-side memoization).
+  const [refetchTick, setRefetchTick] = useState(0);
 
   useEffect(() => {
     const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
     if (!apiBase) {
-      setState({ kind: "error", msg: "API URL 미설정" });
+      setState({ kind: "error", msg: "NEXT_PUBLIC_API_URL 미설정" });
       return;
     }
+    setState({ kind: "loading" });
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch(`${apiBase}/llm/earnings-summary`, {
+        // First render uses server cache (fast if hit); regenerate button
+        // (refetchTick > 0) forces fresh Gemini call by bypassing that cache.
+        const freshQs = refetchTick > 0 ? "?fresh=true" : "";
+        const res = await fetch(`${apiBase}/llm/earnings-summary${freshQs}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(props),
           signal: controller.signal,
+          cache: "no-store",   // never let any layer cache this
         });
         if (res.status === 503) {
           setState({ kind: "no-key" });
@@ -66,7 +74,7 @@ export function AiEarningsSummary(props: Props) {
     })();
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.symbol]);
+  }, [props.symbol, refetchTick]);
 
   if (state.kind === "loading") {
     return (
@@ -88,15 +96,33 @@ export function AiEarningsSummary(props: Props) {
       <p className="text-xs text-destructive">AI 요약 실패: {state.msg}</p>
     );
   }
+  const summary = state.summary;
+  const suspiciouslyShort = summary.length < 300;
+
   return (
     <div className="flex flex-col gap-2">
+      {suspiciouslyShort && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-amber-100/90">
+          ⚠️ 응답이 짧습니다 ({summary.length}자). 백엔드 캐시가 오래된 버전일 수 있음 —
+          우측 <strong>재생성</strong> 버튼을 눌러보세요.
+        </div>
+      )}
       <div
         className="prose prose-sm prose-invert max-w-none [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:text-premium [&_h2:first-child]:mt-0 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0 [&_p]:my-1 [&_p]:text-sm"
-        dangerouslySetInnerHTML={{ __html: markdownToHtml(state.summary) }}
+        dangerouslySetInnerHTML={{ __html: markdownToHtml(summary) }}
       />
-      <p className="text-[10px] text-muted-foreground">
-        Powered by {state.model} · 데이터 기반 자동 생성 · 투자 조언이 아님
-      </p>
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <p className="text-[10px] text-muted-foreground">
+          Powered by {state.model} · {summary.length}자 · 데이터 기반 자동 생성 · 투자 조언이 아님
+        </p>
+        <button
+          onClick={() => setRefetchTick((n) => n + 1)}
+          className="inline-flex items-center gap-1 rounded-md border border-border/40 px-2 py-1 text-[10px] hover:bg-muted/40"
+          title="응답 재생성 (백엔드 캐시가 오래되었다면 강제 재요청)"
+        >
+          <RefreshCw className="h-3 w-3" /> 재생성
+        </button>
+      </div>
     </div>
   );
 }
