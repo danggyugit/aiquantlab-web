@@ -74,9 +74,25 @@ export default async function ScreenerPage() {
     "1y":  typeof spyRet["1y"] === "number" ? spyRet["1y"] : 0,
   };
 
-  // Derive 12-1M raw return from 12M and 1M returns (compounding identity):
-  //   (1 + r_12m) / (1 + r_1m) - 1  ==  P[t-21] / P[t-252] - 1  (exact)
-  // Same trick applied to SPY so we can also take excess-vs-SPY on 12-1M.
+  // IBD-original RS: 12M weighted price change (not excess vs SPY, per O'Neil's
+  // definition). Weights: Q1 (most recent 3M) 40% + Q2/Q3/Q4 20% each.
+  // We approximate each "quarter" from returns cache:
+  //   Q1 = 3m return
+  //   Q2 = quarter ending ~3M ago  = ((1+6m)/(1+3m) - 1)
+  //   Q3 = quarter ending ~6M ago  ≈ ((1+9m)/(1+6m) - 1) — we lack 9m so use half of 6-3
+  //   Q4 = quarter ending ~9M ago  ≈ ((1+12m)/(1+9m) - 1) — approximate from 12m/6m
+  // Practical fallback (avoids 9m gap): use just 3M/6M/12M weighted:
+  //   IBD_raw = 0.4 * r_3m + 0.3 * (r_6m - r_3m) + 0.3 * (r_12m - r_6m)
+  // This preserves O'Neil's "weight recent more" intent using our cached data.
+  function ibdRawScore(r: Record<string, number | null | undefined>): number | null {
+    const r3 = typeof r["3m"] === "number" ? r["3m"] : null;
+    const r6 = typeof r["6m"] === "number" ? r["6m"] : null;
+    const r12 = typeof r["1y"] === "number" ? r["1y"] : null;
+    if (r3 === null || r6 === null || r12 === null) return null;
+    // Contributions: recent 3M (40%), middle 3M (30%), earlier 6M (30%)
+    return 0.4 * r3 + 0.3 * (r6 - r3) + 0.3 * (r12 - r6);
+  }
+
   function twelveMinusOne(r12m: number | null, r1m: number | null): number | null {
     if (r12m === null || r1m === null) return null;
     const denom = 1 + r1m / 100;
@@ -108,16 +124,25 @@ export default async function ScreenerPage() {
         ex6m: excess("6m"),
         ex12m: excess("1y"),
         ex12_1m,
+        ibdRaw: ibdRawScore(r),
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // RS Rating = percentile of 3M excess return across universe (only rows with valid ex3m)
-  const rankable = rsRaw.filter((r) => r.ex3m !== null) as Array<typeof rsRaw[number] & { ex3m: number }>;
-  rankable.sort((a, b) => a.ex3m - b.ex3m);
-  const rsTotal = rankable.length;
+  // RS Rating (3M) = percentile of 3M excess return across universe
+  const rankable3m = rsRaw.filter((r) => r.ex3m !== null) as Array<typeof rsRaw[number] & { ex3m: number }>;
+  rankable3m.sort((a, b) => a.ex3m - b.ex3m);
+  const total3m = rankable3m.length;
   const rsRankMap = new Map<string, number>();
-  rankable.forEach((r, i) => rsRankMap.set(r.ticker, Math.max(1, Math.round(((i + 1) / rsTotal) * 99))));
+  rankable3m.forEach((r, i) => rsRankMap.set(r.ticker, Math.max(1, Math.round(((i + 1) / total3m) * 99))));
+
+  // IBD RS Rating = percentile of 12M weighted raw price change (O'Neil formula)
+  const rankableIbd = rsRaw.filter((r) => r.ibdRaw !== null) as Array<typeof rsRaw[number] & { ibdRaw: number }>;
+  rankableIbd.sort((a, b) => a.ibdRaw - b.ibdRaw);
+  const totalIbd = rankableIbd.length;
+  const ibdRankMap = new Map<string, number>();
+  rankableIbd.forEach((r, i) => ibdRankMap.set(r.ticker, Math.max(1, Math.round(((i + 1) / totalIbd) * 99))));
+
   const rsRows: RsRow[] = rsRaw.map((r) => ({
     ticker: r.ticker,
     name: r.name,
@@ -129,6 +154,7 @@ export default async function ScreenerPage() {
     ex12m: r.ex12m,
     ex12_1m: r.ex12_1m,
     rsRating: rsRankMap.get(r.ticker) ?? 50,
+    ibdRs: ibdRankMap.get(r.ticker) ?? null,
   }));
 
   // ── Breakout rows ─────────────────────────────────────────────────

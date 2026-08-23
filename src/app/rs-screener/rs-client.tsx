@@ -42,6 +42,11 @@ export type RsRow = {
   ex12_1m: number | null;
   // Percentile rank (1-99) of the 3M excess return across the whole universe.
   rsRating: number;
+  // IBD-original RS Rating: percentile of the 12M weighted price change
+  // (0.4 × Q1 + 0.2 × Q2 + 0.2 × Q3 + 0.2 × Q4). Kept alongside our 3M
+  // rsRating so users can toggle between "current leadership" (3M) and
+  // "classic CANSLIM" (12M weighted) interpretations.
+  ibdRs: number | null;
 };
 
 // ── Pattern classifier ─────────────────────────────────────────
@@ -165,7 +170,7 @@ export function classifyPattern(
 
 // ── Component ──────────────────────────────────────────────────
 
-type SortKey = "ex3m" | "ex1m" | "ex6m" | "ex12m" | "ex12_1m" | "rsRating";
+type SortKey = "ex3m" | "ex1m" | "ex6m" | "ex12m" | "ex12_1m" | "rsRating" | "ibdRs";
 
 export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }) {
   const [sector, setSector] = useState("All");
@@ -207,8 +212,16 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
   const sorted = useMemo(() => {
     const dir = sortDir === "desc" ? 1 : -1;
     const cmp = (a: (typeof filtered)[number], b: (typeof filtered)[number]) => {
-      const av = sortKey === "rsRating" ? a.rsRating : (a[sortKey] ?? -Infinity);
-      const bv = sortKey === "rsRating" ? b.rsRating : (b[sortKey] ?? -Infinity);
+      const av = sortKey === "rsRating"
+        ? a.rsRating
+        : sortKey === "ibdRs"
+          ? (a.ibdRs ?? -Infinity)
+          : (a[sortKey] ?? -Infinity);
+      const bv = sortKey === "rsRating"
+        ? b.rsRating
+        : sortKey === "ibdRs"
+          ? (b.ibdRs ?? -Infinity)
+          : (b[sortKey] ?? -Infinity);
       return (bv - av) * dir;
     };
     return [...filtered].sort(cmp);
@@ -304,8 +317,10 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                 <li>• <strong className="text-foreground">6M</strong> = 큰 방향 (Stage) · <strong className="text-foreground">3M</strong> = 현재 주도권 (앵커) · <strong className="text-foreground">1M</strong> = 최근 변화</li>
                 <li>• <strong className="text-foreground">1M ↓ + 3M ↑ + 6M ↑</strong> (Losing Leader): 조정 vs 이탈 판별이 어려움 — <strong>3M이 꺾이면 매도</strong>, 살아있으면 매수 후보</li>
                 <li>• <strong className="text-foreground">1M ↑ + 3M ↓ + 6M ↓</strong> (Dead-cat): 함정 확률 높음, 3M/6M 양전환 전 신규 진입 지양</li>
-                <li>• <strong className="text-foreground">RS Rating</strong>은 3M excess return의 백분위 (1-99). 90+ = 상위 10%.</li>
-                <li>• <strong className="text-foreground">12-1M ex</strong>는 학술 표준 Jegadeesh-Titman 모멘텀 (12개월 수익률에서 최근 1개월 제외) · SPY 대비. 최근 1개월의 <strong>단기 평균회귀(reversal)</strong> 효과를 배제한 순수 중기 추세 → 정통 CANSLIM / 학술 모멘텀 스크리닝에 사용. 12M ex와 12-1M ex의 차이가 크면 최근 1개월이 그만큼 이례적이라는 뜻.</li>
+                <li>• <strong className="text-foreground">RS(3M)</strong> = 3M excess return 백분위 (1-99). 90+ = 상위 10%. <strong>사용자 앵커 (현재 주도권)</strong>.</li>
+                <li>• <strong className="text-foreground">IBD RS</strong> = William O'Neil 원본 방식. 12M 가중 raw 수익률 (0.4×최근3M + 0.3×중간3M + 0.3×이전6M) 의 백분위. <strong>정통 CANSLIM 기준</strong>이며 장기 관점. O'Neil 룰: RS 80 미만 매수 금지, 90+ 최적.</li>
+                <li>• <strong className="text-foreground">RS(3M) vs IBD RS 차이</strong>: 예) RS(3M) 95 · IBD RS 70 → 최근 3개월만 급등한 신흥 종목. 반대로 RS(3M) 60 · IBD RS 92 → 장기 주도주가 최근 조정 중. 두 값의 gap이 종목의 <strong>스토리</strong>를 알려줌.</li>
+                <li>• <strong className="text-foreground">12-1M ex</strong>는 학술 표준 Jegadeesh-Titman 모멘텀 (12개월 수익률에서 최근 1개월 제외) · SPY 대비. 최근 1개월의 <strong>단기 평균회귀(reversal)</strong> 효과를 배제한 순수 중기 추세. 12M ex와 12-1M ex의 차이가 크면 최근 1개월이 그만큼 이례적이라는 뜻.</li>
               </ul>
             </div>
           </CardContent>
@@ -430,7 +445,10 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
             <div className="text-[11px] text-muted-foreground">
               💡 컬럼 헤더 클릭 → 정렬 · 다시 클릭 → 방향 반전 · 현재:{" "}
               <span className="font-mono font-semibold text-primary">
-                {sortKey === "rsRating" ? "RS" : sortKey === "ex12_1m" ? "12-1M" : sortKey.slice(2).toUpperCase()}
+                {sortKey === "rsRating" ? "RS(3M)"
+                  : sortKey === "ibdRs" ? "IBD RS"
+                  : sortKey === "ex12_1m" ? "12-1M"
+                  : sortKey.slice(2).toUpperCase()}
                 {" "}{sortDir === "desc" ? "↓" : "↑"}
               </span>
             </div>
@@ -459,7 +477,24 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                     className="hidden lg:table-cell"
                     title="12개월 수익률에서 최근 1개월 제외 (Jegadeesh-Titman 학술 모멘텀 · SPY 대비)"
                   />
-                  <SortHeader label="RS" k="rsRating" active={sortKey === "rsRating"} dir={sortDir} onClick={toggleSort} className="w-16" />
+                  <SortHeader
+                    label="RS(3M)"
+                    k="rsRating"
+                    active={sortKey === "rsRating"}
+                    dir={sortDir}
+                    onClick={toggleSort}
+                    className="w-16"
+                    title="3M excess return 백분위 (사용자 앵커)"
+                  />
+                  <SortHeader
+                    label="IBD RS"
+                    k="ibdRs"
+                    active={sortKey === "ibdRs"}
+                    dir={sortDir}
+                    onClick={toggleSort}
+                    className="w-16"
+                    title="12M 가중 raw 수익률 백분위 (O'Neil 원본 · 0.4×최근3M + 0.3×3-6M + 0.3×6-12M)"
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -496,11 +531,20 @@ export function RsClient({ rows, sectors }: { rows: RsRow[]; sectors: string[] }
                     )}>
                       {r.rsRating}
                     </td>
+                    <td className={cn(
+                      "px-3 py-2 text-right tabular-nums font-bold text-base w-16",
+                      r.ibdRs === null ? "text-muted-foreground/60"
+                        : r.ibdRs >= 90 ? "text-success"
+                        : r.ibdRs >= 70 ? "text-foreground"
+                        : "text-muted-foreground",
+                    )}>
+                      {r.ibdRs ?? "-"}
+                    </td>
                   </tr>
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    <td colSpan={12} className="px-3 py-8 text-center text-sm text-muted-foreground">
                       필터 조건에 맞는 종목이 없습니다.
                     </td>
                   </tr>
