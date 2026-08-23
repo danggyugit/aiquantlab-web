@@ -102,8 +102,11 @@ export default async function SentimentPage() {
     getMarketNews("general"),
   ]);
 
-  const fg = vixToScore(s.vix.current);
+  // Prefer the backend-computed CNN-style Fear & Greed (VIX + momentum + volume);
+  // fall back to a VIX-only proxy if the snapshot was generated without it.
+  const fg = s.fear_greed?.score ?? vixToScore(s.vix.current);
   const fgMeta = scoreLabel(fg);
+  const fgSource: "full" | "vix-only" = s.fear_greed ? "full" : "vix-only";
   const breadth = s.breadth.above_pct;
   const risk = computeRiskOnOff(s.sectors);
   const verdict = computeVerdict(fg, breadth, risk.score);
@@ -166,6 +169,11 @@ export default async function SentimentPage() {
               <div className={cn("mt-1 text-lg font-semibold", fgMeta.color)}>
                 {fgMeta.label}
               </div>
+              {fgSource === "vix-only" && (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  ⚠️ VIX 단일 지표 프록시 (모멘텀·거래량 컴포넌트 미포함)
+                </div>
+              )}
             </div>
             <div className="relative h-3 w-full max-w-md overflow-hidden rounded-full bg-gradient-to-r from-destructive via-amber-400 to-success">
               <div
@@ -178,6 +186,31 @@ export default async function SentimentPage() {
               <span>Neutral (50)</span>
               <span>Extreme Greed (100)</span>
             </div>
+
+            {/* Component breakdown (only when full F&G is available) */}
+            {s.fear_greed && (
+              <div className="grid w-full max-w-md grid-cols-3 gap-2 text-center text-[11px]">
+                <div className="rounded-md border border-border/40 bg-card/40 px-2 py-1.5">
+                  <div className="text-muted-foreground">VIX</div>
+                  <div className="mt-0.5 font-mono font-semibold">
+                    {s.fear_greed.vix_score?.toFixed(0) ?? "-"}
+                  </div>
+                </div>
+                <div className="rounded-md border border-border/40 bg-card/40 px-2 py-1.5">
+                  <div className="text-muted-foreground">모멘텀</div>
+                  <div className="mt-0.5 font-mono font-semibold">
+                    {s.fear_greed.momentum_score?.toFixed(0) ?? "-"}
+                  </div>
+                </div>
+                <div className="rounded-md border border-border/40 bg-card/40 px-2 py-1.5">
+                  <div className="text-muted-foreground">거래량</div>
+                  <div className="mt-0.5 font-mono font-semibold">
+                    {s.fear_greed.volume_score?.toFixed(0) ?? "-"}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className={cn("mt-1 rounded-lg px-3 py-1.5 text-xs", fgMeta.bg, fgMeta.color)}>
               {fg >= 75 ? "⚠️ 과열 국면 · 급락 위험 증가"
                : fg >= 55 ? "🟢 상승 심리 우세 · 추세 유지"

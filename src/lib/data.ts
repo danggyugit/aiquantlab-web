@@ -86,6 +86,15 @@ export type Breadth = {
   history?: Array<{ date: string; close: number }>;
 };
 
+export type FearGreed = {
+  score: number;               // 0-100
+  label: string;               // "Extreme Fear" | "Fear" | "Neutral" | "Greed" | "Extreme Greed"
+  vix_score?: number | null;
+  momentum_score?: number | null;
+  volume_score?: number | null;
+  updated_at?: string;
+};
+
 export type MarketSnapshot = {
   updated_at: string;
   vix: VixData;
@@ -93,7 +102,7 @@ export type MarketSnapshot = {
   commodities: Commodities;
   breadth: Breadth;
   risk_on_off?: unknown;
-  fear_greed?: unknown;
+  fear_greed?: FearGreed;
 };
 
 export type HeatmapPricePoint = {
