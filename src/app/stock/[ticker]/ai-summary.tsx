@@ -18,6 +18,14 @@ type Props = {
   pe?: number | null;
   sector?: string | null;
   analyst_target_mean?: number | null;
+  analyst_recommendation?: {
+    period: string;
+    strongBuy: number;
+    buy: number;
+    hold: number;
+    sell: number;
+    strongSell: number;
+  } | null;
   earnings_history: Array<{
     period: string;
     actual: number;

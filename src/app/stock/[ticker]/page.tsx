@@ -91,6 +91,19 @@ export default async function StockDetailPage({ params }: PageProps) {
         pe: fundamentals?.pe_ratio ?? null,
         sector: meta.sector,
         analyst_target_mean: priceTarget?.targetMean ?? null,
+        // Latest month's recommendation distribution — Gemini reads this to
+        // give a real "N명 중 X명 매수 우세" verdict instead of falling back
+        // to "데이터 부족" when price target is missing (Finnhub paid tier).
+        analyst_recommendation: recommendation?.[0]
+          ? {
+              period: recommendation[0].period,
+              strongBuy: recommendation[0].strongBuy,
+              buy: recommendation[0].buy,
+              hold: recommendation[0].hold,
+              sell: recommendation[0].sell,
+              strongSell: recommendation[0].strongSell,
+            }
+          : null,
         earnings_history: earnings.slice(0, 4).map((e) => ({
           period: e.period,
           actual: e.actual,
