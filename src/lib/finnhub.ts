@@ -128,3 +128,120 @@ export async function getInsiderTransactions(ticker: string, days = 180): Promis
   if (!data || data.length === 0) return null;
   return data;
 }
+
+/**
+ * Big grab-bag of metrics per ticker — growth rates (revenue/EPS 5y CAGR),
+ * margins, valuation multiples (PEG, EV/EBITDA, P/FCF), dividend info,
+ * beta, 52w, etc. Field names come straight from Finnhub — see
+ * https://finnhub.io/docs/api/company-basic-financials
+ */
+export type FinnhubMetric = Record<string, number | string | null | undefined> & {
+  peBasicExclExtraTTM?: number;
+  pbAnnual?: number;
+  psTTM?: number;
+  pfcfShareTTM?: number;
+  epsGrowth3Y?: number;
+  epsGrowth5Y?: number;
+  revenueGrowth3Y?: number;
+  revenueGrowth5Y?: number;
+  grossMarginTTM?: number;
+  operatingMarginTTM?: number;
+  netProfitMarginTTM?: number;
+  roeTTM?: number;
+  roaTTM?: number;
+  currentRatioAnnual?: number;
+  longTermDebt_capitalAnnual?: number;
+  totalDebt_totalEquityAnnual?: number;
+  dividendYieldIndicatedAnnual?: number;
+  dividendPerShareAnnual?: number;
+  dividendGrowthRate5Y?: number;
+  payoutRatioAnnual?: number;
+  beta?: number;
+  "52WeekHigh"?: number;
+  "52WeekLow"?: number;
+  freeCashFlowTTM?: number;
+  freeCashFlowPerShareTTM?: number;
+  netBuybacksTTM?: number;
+  epsAnnual?: number;
+  fcfMargin5Y?: number;
+};
+
+export async function getMetrics(ticker: string): Promise<FinnhubMetric | null> {
+  const data = await safeGet<FinnhubMetric>(`/finnhub/metric?symbol=${encodeURIComponent(ticker)}`, 6 * 3600);
+  if (!data || Object.keys(data).length === 0) return null;
+  return data;
+}
+
+export type FinancialFiling = {
+  symbol: string;
+  cik: string;
+  year: number;
+  quarter: number;
+  form: string;
+  startDate: string;
+  endDate: string;
+  filedDate: string;
+  acceptedDate: string;
+  report: {
+    ic?: FinancialConcept[];  // income statement
+    bs?: FinancialConcept[];  // balance sheet
+    cf?: FinancialConcept[];  // cash flow
+  };
+};
+
+export type FinancialConcept = {
+  concept: string;
+  unit: string;
+  label: string;
+  value: number;
+};
+
+export async function getFinancials(ticker: string, freq: "quarterly" | "annual" = "quarterly"): Promise<FinancialFiling[] | null> {
+  const data = await safeGet<FinancialFiling[]>(
+    `/finnhub/financials-reported?symbol=${encodeURIComponent(ticker)}&freq=${freq}`,
+    6 * 3600,
+  );
+  if (!data || data.length === 0) return null;
+  return data;
+}
+
+export type Dividend = {
+  symbol: string;
+  date: string;                // ex-dividend date
+  amount: number;
+  adjustedAmount?: number;
+  payDate?: string;
+  declarationDate?: string;
+  recordDate?: string;
+  currency?: string;
+};
+
+export async function getDividendHistory(ticker: string, years = 10): Promise<Dividend[] | null> {
+  const to = new Date();
+  const from = new Date(to);
+  from.setFullYear(from.getFullYear() - years);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const data = await safeGet<Dividend[]>(
+    `/finnhub/dividend-history?symbol=${encodeURIComponent(ticker)}&from_date=${fmt(from)}&to_date=${fmt(to)}`,
+    6 * 3600,
+  );
+  if (!data || data.length === 0) return null;
+  return data;
+}
+
+export type EpsEstimate = {
+  period: string;              // "YYYY-MM-DD" quarter end
+  epsAvg: number;
+  epsHigh: number;
+  epsLow: number;
+  numberAnalysts: number;
+};
+
+export async function getEpsEstimate(ticker: string, freq: "quarterly" | "annual" = "quarterly"): Promise<EpsEstimate[] | null> {
+  const data = await safeGet<EpsEstimate[]>(
+    `/finnhub/eps-estimate?symbol=${encodeURIComponent(ticker)}&freq=${freq}`,
+    3600,
+  );
+  if (!data || data.length === 0) return null;
+  return data;
+}

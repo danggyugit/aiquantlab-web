@@ -11,12 +11,22 @@ import {
 } from "@/lib/data";
 import {
   getCompanyNews,
+  getDividendHistory,
   getEarningsSurprise,
+  getEpsEstimate,
+  getFinancials,
   getInsiderTransactions,
+  getMetrics,
   getPriceTarget,
   getRecommendation,
 } from "@/lib/finnhub";
 import { AiEarningsSummary } from "./ai-summary";
+import {
+  AdvancedValuationCard,
+  FinancialsTrendCard,
+  GrowthMarginsCard,
+} from "./fundamentals-deep";
+import { DividendHistoryCard, EpsRevisionCard } from "./dividend-eps";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +61,10 @@ export default async function StockDetailPage({ params }: PageProps) {
   const { ticker: raw } = await params;
   const ticker = raw.toUpperCase();
 
-  const [heatmap, fund, stocks, news, priceTarget, recommendation, earnings, insiders] = await Promise.all([
+  const [
+    heatmap, fund, stocks, news, priceTarget, recommendation, earnings, insiders,
+    metric, financials, dividends, epsEstimates,
+  ] = await Promise.all([
     getHeatmap(),
     getFundamentals(),
     getStocksMeta(),
@@ -60,6 +73,10 @@ export default async function StockDetailPage({ params }: PageProps) {
     getRecommendation(ticker),
     getEarningsSurprise(ticker),
     getInsiderTransactions(ticker, 180),
+    getMetrics(ticker),
+    getFinancials(ticker, "quarterly"),
+    getDividendHistory(ticker, 10),
+    getEpsEstimate(ticker, "quarterly"),
   ]);
 
   const meta = stocks.find((s) => s.ticker === ticker);
@@ -295,7 +312,22 @@ export default async function StockDetailPage({ params }: PageProps) {
         </CardContent>
       </Card>
 
-      {/* ═══ 8. 펀더멘털 상세 (접이식 · 관심자만) ═══ */}
+      {/* ═══ 8. 성장률 & 마진 스냅샷 (Tier 1 #2 · #3) ═══ */}
+      <GrowthMarginsCard metric={metric} />
+
+      {/* ═══ 9. 재무제표 추세 (Tier 1 #1) — 최근 4-8분기 매출·순이익·FCF ═══ */}
+      <FinancialsTrendCard filings={financials} />
+
+      {/* ═══ 10. 애널리스트 EPS 추정 (Tier 2 #10) ═══ */}
+      <EpsRevisionCard estimates={epsEstimates} actuals={earnings} />
+
+      {/* ═══ 11. 배당 이력 (Tier 1 #4) — 10년 지속성 판단 ═══ */}
+      {dividends && dividends.length > 0 && <DividendHistoryCard data={dividends} />}
+
+      {/* ═══ 12. 고급 밸류에이션 (Tier 2 #14) — PEG · EV/EBITDA · P/FCF ═══ */}
+      {metric && <AdvancedValuationCard metric={metric} />}
+
+      {/* ═══ 13. 펀더멘털 상세 (접이식 · 관심자만) ═══ */}
       {fundamentals && (
         <details className="rounded-lg border border-border/40 bg-card/40 p-4">
           <summary className="cursor-pointer text-sm font-semibold hover:text-primary">
