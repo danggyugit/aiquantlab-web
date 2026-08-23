@@ -9,7 +9,14 @@ import {
   getStocksMeta,
   latestQuote,
 } from "@/lib/data";
-import { getCompanyNews, getPriceTarget, getRecommendation } from "@/lib/finnhub";
+import {
+  getCompanyNews,
+  getEarningsSurprise,
+  getInsiderTransactions,
+  getPriceTarget,
+  getRecommendation,
+} from "@/lib/finnhub";
+import { getEarningsSummary } from "@/lib/llm";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,13 +52,15 @@ export default async function StockDetailPage({ params }: PageProps) {
   const { ticker: raw } = await params;
   const ticker = raw.toUpperCase();
 
-  const [heatmap, fund, stocks, news, priceTarget, recommendation] = await Promise.all([
+  const [heatmap, fund, stocks, news, priceTarget, recommendation, earnings, insiders] = await Promise.all([
     getHeatmap(),
     getFundamentals(),
     getStocksMeta(),
     getCompanyNews(ticker, 14),
     getPriceTarget(ticker),
     getRecommendation(ticker),
+    getEarningsSurprise(ticker),
+    getInsiderTransactions(ticker, 180),
   ]);
 
   const meta = stocks.find((s) => s.ticker === ticker);
@@ -77,6 +86,26 @@ export default async function StockDetailPage({ params }: PageProps) {
   const rangePct = fundamentals?.fifty_two_week_high && fundamentals.fifty_two_week_low && quote
     ? ((quote.price - fundamentals.fifty_two_week_low) /
         (fundamentals.fifty_two_week_high - fundamentals.fifty_two_week_low)) * 100
+    : null;
+
+  // AI summary — only call if we have earnings data (avoids pointless LLM calls
+  // for tickers with no coverage). Result cached 6h server-side.
+  const aiSummary = earnings && earnings.length > 0
+    ? await getEarningsSummary({
+        symbol: ticker,
+        name: meta.name,
+        price: quote?.price ?? null,
+        market_cap: priceData.market_cap ?? null,
+        pe: fundamentals?.pe_ratio ?? null,
+        sector: meta.sector,
+        analyst_target_mean: priceTarget?.targetMean ?? null,
+        earnings_history: earnings.slice(0, 4).map((e) => ({
+          period: e.period,
+          actual: e.actual,
+          estimate: e.estimate,
+          surprisePercent: e.surprisePercent,
+        })),
+      })
     : null;
 
   return (
@@ -266,40 +295,45 @@ export default async function StockDetailPage({ params }: PageProps) {
         </CardContent>
       </Card>
 
-      {/* ═══ 7. Earnings Surprise (placeholder) ═══ */}
-      <Card className="border-amber-500/30 bg-amber-500/5">
+      {/* ═══ 7. Earnings Surprise ═══ */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">📊 실적 서프라이즈 히스토리 (준비 중)</CardTitle>
+          <CardTitle className="text-base">📊 실적 서프라이즈</CardTitle>
+          <CardDescription className="text-xs">
+            {earnings ? `최근 ${earnings.length}분기 · Actual vs Estimate` : "Finnhub"}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          Streamlit은 Estimate vs Reported 바차트 + Beat/Miss 비율 + 평균 서프라이즈% + 마지막 분기 서프라이즈% 메트릭을 표시.
-          Finnhub earnings API 프록시 필요.
+        <CardContent>
+          <EarningsSurpriseView data={earnings} />
         </CardContent>
       </Card>
 
-      {/* ═══ 8. Insider Trading (placeholder) ═══ */}
-      <Card className="border-amber-500/30 bg-amber-500/5">
+      {/* ═══ 8. Insider Trading (SEC Form 4) ═══ */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">🏛️ 내부자 거래 (SEC Form 4) (준비 중)</CardTitle>
+          <CardTitle className="text-base">🏛️ 내부자 거래 (SEC Form 4)</CardTitle>
+          <CardDescription className="text-xs">
+            {insiders ? `최근 6개월 · ${insiders.length}건` : "최근 6개월"}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          Streamlit은 SEC EDGAR Form 4 데이터로 임원명·관계·거래유형·주수·가격·금액·신고일 테이블을 표시.
-          이 데이터는 <Link href="/sec-intelligence" className="text-primary hover:underline">SEC Intelligence</Link>{" "}
-          페이지에서 13F 홀딩과 함께 확인 가능 (내부자는 Form 4 파싱 스크립트 추가 후 활성화).
+        <CardContent>
+          <InsiderView data={insiders} />
         </CardContent>
       </Card>
 
-      {/* ═══ 9. AI Earnings Summary (placeholder) ═══ */}
+      {/* ═══ 9. AI Earnings Summary (Gemini) ═══ */}
       <Card className="border-premium/30 bg-premium/5">
         <CardHeader>
           <div className="flex items-center gap-2">
             <CardTitle className="text-base">🤖 AI 실적 요약</CardTitle>
-            <Badge variant="secondary" className="bg-premium/20 text-premium text-[10px]">LLM</Badge>
+            <Badge variant="secondary" className="bg-premium/20 text-premium text-[10px]">Gemini 2.5 Flash</Badge>
           </div>
+          <CardDescription className="text-xs">
+            실적품질 · 강점 · 우려 · 애널리스트 컨센서스 · 종합판정 5섹션 · 데이터 기반 자동 생성
+          </CardDescription>
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          Streamlit은 Gemini 2.5 Flash로 실적품질 · 강점 · 우려 · 컨센서스 · 평가 5섹션 리포트를 생성.
-          LLM API 프록시 (Anthropic/Google) 도입 후 활성화.
+        <CardContent>
+          <AiSummaryView summary={aiSummary} hasEarnings={!!earnings && earnings.length > 0} />
         </CardContent>
       </Card>
 
@@ -317,12 +351,21 @@ function KeyMetric({
   label,
   value,
   change,
-}: { label: string; value: string; change?: number }) {
+  tone,
+}: {
+  label: string;
+  value: string;
+  change?: number;
+  /** Override the auto-colouring (usually driven by `change`) — useful when
+   * `value` is a formatted string like "+$1.2B" that already carries sign. */
+  tone?: "up" | "down" | "neutral";
+}) {
   const isUp = (change ?? 0) >= 0;
+  const valueColor = tone === "up" ? "text-success" : tone === "down" ? "text-destructive" : "text-foreground";
   return (
     <div>
       <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 text-xl font-bold tabular-nums">{value}</div>
+      <div className={cn("mt-1 text-xl font-bold tabular-nums", valueColor)}>{value}</div>
       {change !== undefined && (
         <div className={cn("mt-0.5 flex items-center gap-1 text-xs font-semibold tabular-nums", isUp ? "text-success" : "text-destructive")}>
           {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
@@ -340,6 +383,248 @@ function QuoteCell({ label, value, color }: { label: string; value: string; colo
       <div className={cn("mt-0.5 text-lg font-semibold tabular-nums", color ?? "text-foreground")}>{value}</div>
     </div>
   );
+}
+
+// ─────────── Section renderers (earnings / insider / AI) ───────────
+
+function EarningsSurpriseView({ data }: { data: import("@/lib/finnhub").EarningsSurpriseRow[] | null }) {
+  if (!data || data.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        실적 데이터가 없거나 Finnhub API가 미연결 상태입니다.
+      </p>
+    );
+  }
+  // Sort chronological (oldest first) for the mini bar chart
+  const chrono = [...data].sort((a, b) => a.period.localeCompare(b.period));
+  const beats = data.filter((d) => d.surprisePercent > 0).length;
+  const beatRate = (beats / data.length) * 100;
+  const avgSurprise = data.reduce((s, d) => s + d.surprisePercent, 0) / data.length;
+  const latest = chrono[chrono.length - 1];
+
+  // Bar chart bounds
+  const maxAbs = Math.max(...chrono.flatMap((d) => [Math.abs(d.actual), Math.abs(d.estimate)]));
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Summary metrics */}
+      <div className="grid grid-cols-3 gap-3">
+        <KeyMetric
+          label="Beat 비율"
+          value={`${beatRate.toFixed(0)}%`}
+          change={beatRate - 50}
+        />
+        <KeyMetric
+          label="평균 서프라이즈"
+          value={`${avgSurprise >= 0 ? "+" : ""}${avgSurprise.toFixed(2)}%`}
+          change={avgSurprise}
+        />
+        <KeyMetric
+          label={`최근 분기 (${latest.period.slice(0, 7)})`}
+          value={`${latest.surprisePercent >= 0 ? "+" : ""}${latest.surprisePercent.toFixed(2)}%`}
+          change={latest.surprisePercent}
+        />
+      </div>
+
+      {/* Bar chart per quarter */}
+      <div className="flex flex-col gap-2">
+        {chrono.map((d) => {
+          const actualPct = (Math.abs(d.actual) / maxAbs) * 100;
+          const estimatePct = (Math.abs(d.estimate) / maxAbs) * 100;
+          const beat = d.surprisePercent > 0;
+          return (
+            <div key={d.period} className="grid grid-cols-[80px_1fr_100px] items-center gap-3 text-xs">
+              <span className="font-mono text-muted-foreground">
+                {d.year} Q{d.quarter}
+              </span>
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={cn("h-3 rounded-sm", beat ? "bg-success/80" : "bg-destructive/80")}
+                    style={{ width: `${actualPct}%` }}
+                    title={`Actual EPS: $${d.actual}`}
+                  />
+                  <span className="tabular-nums text-[10px] text-muted-foreground">Actual ${d.actual}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="h-3 rounded-sm bg-muted-foreground/40"
+                    style={{ width: `${estimatePct}%` }}
+                    title={`Estimate EPS: $${d.estimate}`}
+                  />
+                  <span className="tabular-nums text-[10px] text-muted-foreground">Est. ${d.estimate}</span>
+                </div>
+              </div>
+              <span
+                className={cn(
+                  "text-right tabular-nums font-semibold",
+                  beat ? "text-success" : "text-destructive",
+                )}
+              >
+                {d.surprisePercent >= 0 ? "+" : ""}{d.surprisePercent.toFixed(1)}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function InsiderView({ data }: { data: import("@/lib/finnhub").InsiderTx[] | null }) {
+  if (!data || data.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        최근 6개월 내부자 거래가 없거나 Finnhub API가 미연결 상태입니다.
+      </p>
+    );
+  }
+  // Sort by filing date desc, show top 20
+  const rows = [...data]
+    .sort((a, b) => (b.filingDate || "").localeCompare(a.filingDate || ""))
+    .slice(0, 20);
+
+  // Summary: buy vs sell counts + net shares
+  const buys = data.filter((d) => d.change > 0);
+  const sells = data.filter((d) => d.change < 0);
+  const netShares = data.reduce((s, d) => s + d.change, 0);
+  const netUsd = data.reduce((s, d) => s + (d.change * (d.transactionPrice || 0)), 0);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-3 gap-3">
+        <KeyMetric label="매수 건수" value={String(buys.length)} tone={buys.length > sells.length ? "up" : "neutral"} />
+        <KeyMetric label="매도 건수" value={String(sells.length)} tone={sells.length > buys.length ? "down" : "neutral"} />
+        <KeyMetric
+          label="순 매수 (USD)"
+          value={fmtSignedUsd(netUsd)}
+          tone={netUsd >= 0 ? "up" : "down"}
+        />
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="border-b border-border/60 bg-muted/20 text-left text-[10px] text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5">신고일</th>
+              <th className="px-2 py-1.5">이름</th>
+              <th className="px-2 py-1.5 hidden md:table-cell">직위</th>
+              <th className="px-2 py-1.5 text-center">구분</th>
+              <th className="px-2 py-1.5 text-right">주 수</th>
+              <th className="px-2 py-1.5 text-right hidden sm:table-cell">가격</th>
+              <th className="px-2 py-1.5 text-right">금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((tx, i) => {
+              const isBuy = tx.change > 0;
+              const usd = tx.change * (tx.transactionPrice || 0);
+              return (
+                <tr key={i} className="border-b border-border/30">
+                  <td className="px-2 py-1.5 tabular-nums text-muted-foreground">{tx.filingDate?.slice(5) ?? "-"}</td>
+                  <td className="px-2 py-1.5 truncate max-w-[160px]">{tx.name}</td>
+                  <td className="px-2 py-1.5 hidden md:table-cell text-muted-foreground truncate max-w-[140px]">{tx.position ?? "-"}</td>
+                  <td className="px-2 py-1.5 text-center">
+                    <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                      isBuy ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+                    )}>
+                      {tx.transactionCode} {isBuy ? "매수" : "매도"}
+                    </span>
+                  </td>
+                  <td className={cn("px-2 py-1.5 text-right tabular-nums", isBuy ? "text-success" : "text-destructive")}>
+                    {isBuy ? "+" : ""}{tx.change.toLocaleString()}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums hidden sm:table-cell text-muted-foreground">
+                    ${tx.transactionPrice?.toFixed(2) ?? "-"}
+                  </td>
+                  <td className={cn("px-2 py-1.5 text-right tabular-nums font-semibold", isBuy ? "text-success" : "text-destructive")}>
+                    {fmtSignedUsd(usd)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {data.length > 20 && (
+        <p className="text-[10px] text-muted-foreground text-center">
+          최근 20건 표시 · 전체 {data.length}건
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AiSummaryView({
+  summary,
+  hasEarnings,
+}: { summary: import("@/lib/llm").EarningsSummaryResponse; hasEarnings: boolean }) {
+  if (!hasEarnings) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        실적 데이터가 없어 요약을 생성할 수 없습니다.
+      </p>
+    );
+  }
+  if (!summary) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        AI 요약을 불러올 수 없습니다. Render 환경변수에 <code className="rounded bg-black/30 px-1">GEMINI_API_KEY</code> 설정이 필요합니다.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <div
+        className="prose prose-sm prose-invert max-w-none [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:text-premium [&_h2:first-child]:mt-0 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0 [&_p]:my-1 [&_p]:text-sm"
+        dangerouslySetInnerHTML={{ __html: markdownToHtml(summary.summary_md) }}
+      />
+      <p className="text-[10px] text-muted-foreground">
+        Powered by {summary.model} · 데이터 기반 자동 생성 · 투자 조언이 아님
+      </p>
+    </div>
+  );
+}
+
+// Minimal markdown → HTML (headings, bold, bullets, paragraphs). Enough for
+// Gemini's 5-section format; avoids pulling in a full markdown library.
+function markdownToHtml(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let inList = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      continue;
+    }
+    // Bold
+    let l = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    if (l.startsWith("## ")) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<h2>${l.slice(3)}</h2>`);
+    } else if (l.startsWith("# ")) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<h2>${l.slice(2)}</h2>`);
+    } else if (l.startsWith("- ") || l.startsWith("* ")) {
+      if (!inList) { out.push("<ul>"); inList = true; }
+      out.push(`<li>${l.slice(2)}</li>`);
+    } else {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<p>${l}</p>`);
+    }
+  }
+  if (inList) out.push("</ul>");
+  return out.join("");
+}
+
+function fmtSignedUsd(v: number): string {
+  const sign = v >= 0 ? "+" : "-";
+  const abs = Math.abs(v);
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${sign === "+" ? "" : "-"}${(abs / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
 }
 
 function RecommendationBar({ row }: { row: import("@/lib/finnhub").RecommendationRow }) {

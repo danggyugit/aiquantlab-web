@@ -82,3 +82,49 @@ export async function getRecommendation(ticker: string): Promise<RecommendationR
   if (!data || data.length === 0) return null;
   return data;
 }
+
+export type EarningsSurpriseRow = {
+  symbol: string;
+  period: string;             // "YYYY-MM-DD" — quarter end
+  year: number;
+  quarter: number;            // 1..4
+  actual: number;
+  estimate: number;
+  surprise: number;
+  surprisePercent: number;
+};
+
+/** Last 4 quarters of actual vs estimate EPS. */
+export async function getEarningsSurprise(ticker: string): Promise<EarningsSurpriseRow[] | null> {
+  const data = await safeGet<EarningsSurpriseRow[]>(`/finnhub/earnings-surprise?symbol=${encodeURIComponent(ticker)}`, 3600);
+  if (!data || data.length === 0) return null;
+  return data;
+}
+
+export type InsiderTx = {
+  name: string;               // insider name (typically ALL CAPS)
+  share: number;              // shares held AFTER the transaction
+  change: number;             // + = buy, - = sell
+  filingDate: string;         // when SEC Form 4 was filed
+  transactionDate: string;    // when the trade happened
+  transactionCode: string;    // "P" = purchase, "S" = sale, "A" = grant, etc.
+  transactionPrice: number;
+  currency?: string;
+  isDerivative?: boolean;
+  position?: string;          // "CEO", "CFO", "10% Owner", ...
+  symbol?: string;
+};
+
+/** SEC Form 4 insider transactions (default: last 6 months from today). */
+export async function getInsiderTransactions(ticker: string, days = 180): Promise<InsiderTx[] | null> {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(from.getDate() - days);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const data = await safeGet<InsiderTx[]>(
+    `/finnhub/insider-transactions?symbol=${encodeURIComponent(ticker)}&from_date=${fmt(from)}&to_date=${fmt(to)}`,
+    1800,
+  );
+  if (!data || data.length === 0) return null;
+  return data;
+}
