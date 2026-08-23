@@ -192,6 +192,10 @@ export type BacktestConfig = {
   use_inv_vol_weight: boolean;
   use_momentum_weight: boolean;
   cash_strategy: "none" | "vol_target" | "regime" | "combined";
+  // Target the model regresses/classifies against. "raw" = forward return
+  // (default, backward-compat). "vol_adj" = fwd/vol. "classification" =
+  // top-quintile flag → RF/XGB/LGBM Classifier variants + predict_proba.
+  label_kind?: "raw" | "vol_adj" | "classification";
 };
 
 export type BacktestSummary = {
@@ -310,6 +314,7 @@ export type BacktestFull = {
   use_ensemble: boolean;
   rebal_m: number;
   cash_strategy: string;
+  label_kind?: "raw" | "vol_adj" | "classification";
 };
 
 export type BacktestPreset = {
