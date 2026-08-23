@@ -28,6 +28,7 @@ import {
 } from "./fundamentals-deep";
 import { DividendHistoryCard, EpsRevisionCard } from "./dividend-eps";
 import { PeerComparisonCard } from "./peer-compare";
+import { ValuationContextCard } from "./valuation-context";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -327,6 +328,9 @@ export default async function StockDetailPage({ params }: PageProps) {
 
       {/* ═══ 12. 고급 밸류에이션 (Tier 2 #14) — PEG · EV/EBITDA · P/FCF ═══ */}
       {metric && <AdvancedValuationCard metric={metric} />}
+
+      {/* ═══ 12b. 밸류에이션 위치 (Tier 1 #8) — 52주 밴드 대비 현재 위치 ═══ */}
+      {metric && <ValuationContextCard metric={metric} currentPrice={quote?.price ?? null} />}
 
       {/* ═══ 13. 경쟁사 비교 (Tier 1 #5) — 동종 산업 상위 5개 ═══ */}
       <PeerComparisonCard
