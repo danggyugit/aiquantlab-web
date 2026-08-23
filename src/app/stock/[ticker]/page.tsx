@@ -16,7 +16,7 @@ import {
   getPriceTarget,
   getRecommendation,
 } from "@/lib/finnhub";
-import { getEarningsSummary } from "@/lib/llm";
+import { AiEarningsSummary } from "./ai-summary";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,10 +88,11 @@ export default async function StockDetailPage({ params }: PageProps) {
         (fundamentals.fifty_two_week_high - fundamentals.fifty_two_week_low)) * 100
     : null;
 
-  // AI summary — only call if we have earnings data (avoids pointless LLM calls
-  // for tickers with no coverage). Result cached 6h server-side.
-  const aiSummary = earnings && earnings.length > 0
-    ? await getEarningsSummary({
+  // AI summary context (LLM call runs client-side to sidestep Vercel Hobby's
+  // 10s serverless timeout — Render Free cold start + Gemini generation can
+  // exceed that window and kill SSR before the response returns).
+  const aiContext = earnings && earnings.length > 0
+    ? {
         symbol: ticker,
         name: meta.name,
         price: quote?.price ?? null,
@@ -105,7 +106,7 @@ export default async function StockDetailPage({ params }: PageProps) {
           estimate: e.estimate,
           surprisePercent: e.surprisePercent,
         })),
-      })
+      }
     : null;
 
   return (
@@ -212,7 +213,8 @@ export default async function StockDetailPage({ params }: PageProps) {
         ) : (
           <Card className="border-muted/40">
             <CardContent className="py-4 text-xs text-muted-foreground">
-              애널리스트 목표가 데이터가 없습니다 (Finnhub 커버리지 부재 또는 API 미연결).
+              목표가 컨센서스는 Finnhub 유료 tier 데이터입니다 (무료 tier 접근 불가).
+              아래 <strong className="text-foreground">추천 등급 분포</strong>는 무료 tier로도 확인 가능.
             </CardContent>
           </Card>
         )}
@@ -333,7 +335,13 @@ export default async function StockDetailPage({ params }: PageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <AiSummaryView summary={aiSummary} hasEarnings={!!earnings && earnings.length > 0} />
+          {aiContext ? (
+            <AiEarningsSummary {...aiContext} />
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              실적 데이터가 없어 요약을 생성할 수 없습니다.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -553,69 +561,6 @@ function InsiderView({ data }: { data: import("@/lib/finnhub").InsiderTx[] | nul
       )}
     </div>
   );
-}
-
-function AiSummaryView({
-  summary,
-  hasEarnings,
-}: { summary: import("@/lib/llm").EarningsSummaryResponse; hasEarnings: boolean }) {
-  if (!hasEarnings) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        실적 데이터가 없어 요약을 생성할 수 없습니다.
-      </p>
-    );
-  }
-  if (!summary) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        AI 요약을 불러올 수 없습니다. Render 환경변수에 <code className="rounded bg-black/30 px-1">GEMINI_API_KEY</code> 설정이 필요합니다.
-      </p>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-2">
-      <div
-        className="prose prose-sm prose-invert max-w-none [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:text-premium [&_h2:first-child]:mt-0 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0 [&_p]:my-1 [&_p]:text-sm"
-        dangerouslySetInnerHTML={{ __html: markdownToHtml(summary.summary_md) }}
-      />
-      <p className="text-[10px] text-muted-foreground">
-        Powered by {summary.model} · 데이터 기반 자동 생성 · 투자 조언이 아님
-      </p>
-    </div>
-  );
-}
-
-// Minimal markdown → HTML (headings, bold, bullets, paragraphs). Enough for
-// Gemini's 5-section format; avoids pulling in a full markdown library.
-function markdownToHtml(md: string): string {
-  const lines = md.split("\n");
-  const out: string[] = [];
-  let inList = false;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) {
-      if (inList) { out.push("</ul>"); inList = false; }
-      continue;
-    }
-    // Bold
-    let l = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    if (l.startsWith("## ")) {
-      if (inList) { out.push("</ul>"); inList = false; }
-      out.push(`<h2>${l.slice(3)}</h2>`);
-    } else if (l.startsWith("# ")) {
-      if (inList) { out.push("</ul>"); inList = false; }
-      out.push(`<h2>${l.slice(2)}</h2>`);
-    } else if (l.startsWith("- ") || l.startsWith("* ")) {
-      if (!inList) { out.push("<ul>"); inList = true; }
-      out.push(`<li>${l.slice(2)}</li>`);
-    } else {
-      if (inList) { out.push("</ul>"); inList = false; }
-      out.push(`<p>${l}</p>`);
-    }
-  }
-  if (inList) out.push("</ul>");
-  return out.join("");
 }
 
 function fmtSignedUsd(v: number): string {
