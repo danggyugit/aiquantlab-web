@@ -323,16 +323,24 @@ function SectorPanel({
       <p className="text-xs text-muted-foreground">
         3M 시가총액 가중 평균 · SPY 대비 excess return · 강한 순 정렬 · SPY 3M: {spy3m >= 0 ? "+" : ""}{spy3m.toFixed(2)}%
       </p>
-      <div className="overflow-hidden rounded-lg border border-border/40">
+      <div className="overflow-x-auto rounded-lg border border-border/40">
         <table className="w-full text-sm">
+          <colgroup>
+            <col className="w-10" />
+            <col />
+            <col className="w-14" />
+            <col className="w-20" />
+            <col className="w-20" />
+            <col className="w-[72px]" />
+          </colgroup>
           <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 w-8">#</th>
-              <th className="px-3 py-2">Sector</th>
-              <th className="px-3 py-2 text-right w-16">종목</th>
-              <th className="px-3 py-2 text-right w-24">3M 수익률</th>
-              <th className="px-3 py-2 text-right w-24">vs SPY</th>
-              <th className="px-3 py-2 text-right w-16"></th>
+              <th className="px-2 py-2">#</th>
+              <th className="px-2 py-2">Sector</th>
+              <th className="px-2 py-2 text-right">종목</th>
+              <th className="px-2 py-2 text-right">3M 수익률</th>
+              <th className="px-2 py-2 text-right">vs SPY</th>
+              <th className="px-1 py-2 text-right"></th>
             </tr>
           </thead>
           <tbody>
@@ -348,28 +356,28 @@ function SectorPanel({
                     isSelected ? "bg-primary/10" : isTop3 ? "bg-success/5 hover:bg-success/10" : "hover:bg-muted/20",
                   )}
                 >
-                  <td className={cn("px-3 py-2 tabular-nums text-sm", isTop3 ? "font-bold text-success" : "text-muted-foreground")}>
+                  <td className={cn("px-2 py-2 tabular-nums text-sm", isTop3 ? "font-bold text-success" : "text-muted-foreground")}>
                     {i + 1}
                   </td>
-                  <td className="px-3 py-2 font-semibold">{r.key}</td>
-                  <td className="px-3 py-2 text-right text-xs text-muted-foreground tabular-nums">{r.count}</td>
-                  <td className={cn("px-3 py-2 text-right tabular-nums", r.wAvg >= 0 ? "text-success" : "text-destructive")}>
+                  <td className="px-2 py-2 font-semibold truncate">{r.key}</td>
+                  <td className="px-2 py-2 text-right text-xs text-muted-foreground tabular-nums">{r.count}</td>
+                  <td className={cn("px-2 py-2 text-right tabular-nums", r.wAvg >= 0 ? "text-success" : "text-destructive")}>
                     {r.wAvg >= 0 ? "+" : ""}{r.wAvg.toFixed(2)}%
                   </td>
-                  <td className={cn("px-3 py-2 text-right tabular-nums font-bold", up ? "text-success" : "text-destructive")}>
+                  <td className={cn("px-2 py-2 text-right tabular-nums font-bold", up ? "text-success" : "text-destructive")}>
                     {up ? "+" : ""}{r.excess.toFixed(2)}%
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-1 py-2 text-right">
                     <button
                       onClick={() => onPick(r.key)}
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors",
+                        "inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold transition-colors",
                         isSelected
                           ? "bg-primary text-primary-foreground"
                           : "border border-border/40 text-muted-foreground hover:bg-primary/10 hover:text-primary",
                       )}
                     >
-                      {isSelected ? "선택됨" : "선택"} {!isSelected && <ArrowRight className="h-3 w-3" />}
+                      {isSelected ? "선택됨" : (<>선택 <ArrowRight className="h-3 w-3" /></>)}
                     </button>
                   </td>
                 </tr>
@@ -403,16 +411,24 @@ function IndustryPanel({
       <p className="text-xs text-muted-foreground">
         선택 섹터 내 산업별 3M excess vs SPY · 강한 순 정렬 · 상위 3개 자동 하이라이트
       </p>
-      <div className="max-h-[400px] overflow-y-auto rounded-lg border border-border/40">
+      <div className="max-h-[400px] overflow-x-auto overflow-y-auto rounded-lg border border-border/40">
         <table className="w-full text-sm">
+          <colgroup>
+            <col className="w-10" />
+            <col />
+            <col className="w-14" />
+            <col className="w-20" />
+            <col className="w-20" />
+            <col className="w-[72px]" />
+          </colgroup>
           <thead className="sticky top-0 border-b border-border/60 bg-card text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 w-8">#</th>
-              <th className="px-3 py-2">Industry</th>
-              <th className="px-3 py-2 text-right w-16">종목</th>
-              <th className="px-3 py-2 text-right w-24">3M</th>
-              <th className="px-3 py-2 text-right w-24">vs SPY</th>
-              <th className="px-3 py-2 text-right w-16"></th>
+              <th className="px-2 py-2">#</th>
+              <th className="px-2 py-2">Industry</th>
+              <th className="px-2 py-2 text-right">종목</th>
+              <th className="px-2 py-2 text-right">3M</th>
+              <th className="px-2 py-2 text-right">vs SPY</th>
+              <th className="px-1 py-2 text-right"></th>
             </tr>
           </thead>
           <tbody>
@@ -428,28 +444,28 @@ function IndustryPanel({
                     isSelected ? "bg-primary/10" : isTop3 ? "bg-success/5 hover:bg-success/10" : "hover:bg-muted/20",
                   )}
                 >
-                  <td className={cn("px-3 py-2 tabular-nums text-sm", isTop3 ? "font-bold text-success" : "text-muted-foreground")}>
+                  <td className={cn("px-2 py-2 tabular-nums text-sm", isTop3 ? "font-bold text-success" : "text-muted-foreground")}>
                     {i + 1}
                   </td>
-                  <td className="px-3 py-2 font-medium">{r.key}</td>
-                  <td className="px-3 py-2 text-right text-xs text-muted-foreground tabular-nums">{r.count}</td>
-                  <td className={cn("px-3 py-2 text-right tabular-nums", r.wAvg >= 0 ? "text-success" : "text-destructive")}>
+                  <td className="px-2 py-2 font-medium truncate">{r.key}</td>
+                  <td className="px-2 py-2 text-right text-xs text-muted-foreground tabular-nums">{r.count}</td>
+                  <td className={cn("px-2 py-2 text-right tabular-nums", r.wAvg >= 0 ? "text-success" : "text-destructive")}>
                     {r.wAvg >= 0 ? "+" : ""}{r.wAvg.toFixed(2)}%
                   </td>
-                  <td className={cn("px-3 py-2 text-right tabular-nums font-bold", up ? "text-success" : "text-destructive")}>
+                  <td className={cn("px-2 py-2 text-right tabular-nums font-bold", up ? "text-success" : "text-destructive")}>
                     {up ? "+" : ""}{r.excess.toFixed(2)}%
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-1 py-2 text-right">
                     <button
                       onClick={() => onPick(r.key)}
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors",
+                        "inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold transition-colors",
                         isSelected
                           ? "bg-primary text-primary-foreground"
                           : "border border-border/40 text-muted-foreground hover:bg-primary/10 hover:text-primary",
                       )}
                     >
-                      {isSelected ? "선택됨" : "선택"} {!isSelected && <ArrowRight className="h-3 w-3" />}
+                      {isSelected ? "선택됨" : (<>선택 <ArrowRight className="h-3 w-3" /></>)}
                     </button>
                   </td>
                 </tr>
@@ -492,18 +508,28 @@ function StockPanel({
       <p className="text-xs text-muted-foreground">
         선택 산업 내 종목 · 3M excess desc 정렬 · Pattern 자동 분류
       </p>
-      <div className="max-h-[500px] overflow-y-auto rounded-lg border border-border/40">
+      <div className="max-h-[500px] overflow-x-auto overflow-y-auto rounded-lg border border-border/40">
         <table className="w-full text-sm">
+          <colgroup>
+            <col className="w-10" />
+            <col className="w-20" />
+            <col className="hidden sm:table-column" />
+            <col className="w-24" />
+            <col className="w-16" />
+            <col className="w-16" />
+            <col className="w-16 hidden md:table-column" />
+            <col className="w-[72px]" />
+          </colgroup>
           <thead className="sticky top-0 border-b border-border/60 bg-card text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 w-10">#</th>
-              <th className="px-3 py-2">Ticker</th>
-              <th className="px-3 py-2 hidden sm:table-cell">Name</th>
-              <th className="px-3 py-2">Pattern</th>
-              <th className="px-3 py-2 text-right w-20">1M ex</th>
-              <th className="px-3 py-2 text-right w-20">3M ex</th>
-              <th className="px-3 py-2 text-right w-20 hidden md:table-cell">6M ex</th>
-              <th className="px-3 py-2 text-right w-16"></th>
+              <th className="px-2 py-2">#</th>
+              <th className="px-2 py-2">Ticker</th>
+              <th className="px-2 py-2 hidden sm:table-cell">Name</th>
+              <th className="px-2 py-2">Pattern</th>
+              <th className="px-2 py-2 text-right">1M ex</th>
+              <th className="px-2 py-2 text-right">3M ex</th>
+              <th className="px-2 py-2 text-right hidden md:table-cell">6M ex</th>
+              <th className="px-1 py-2 text-right"></th>
             </tr>
           </thead>
           <tbody>
@@ -517,15 +543,15 @@ function StockPanel({
                     isSelected ? "bg-primary/10" : "hover:bg-muted/20",
                   )}
                 >
-                  <td className="px-3 py-2 tabular-nums text-sm text-muted-foreground">{i + 1}</td>
-                  <td className="px-3 py-2 font-mono text-sm font-semibold">
+                  <td className="px-2 py-2 tabular-nums text-sm text-muted-foreground">{i + 1}</td>
+                  <td className="px-2 py-2 font-mono text-sm font-semibold">
                     <Link href={`/stock/${s.row.ticker}`} className="text-primary hover:underline">{s.row.ticker}</Link>
                   </td>
-                  <td className="px-3 py-2 hidden sm:table-cell truncate max-w-[200px] text-xs text-muted-foreground">{s.row.name}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 hidden sm:table-cell truncate text-xs text-muted-foreground">{s.row.name}</td>
+                  <td className="px-2 py-2">
                     <span
                       className={cn(
-                        "inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold",
+                        "inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-xs font-semibold",
                         s.pattern.tone === "success" ? "bg-success/15 text-success"
                         : s.pattern.tone === "warning" ? "bg-amber-500/15 text-amber-400"
                         : s.pattern.tone === "danger" ? "bg-destructive/15 text-destructive"
@@ -539,17 +565,17 @@ function StockPanel({
                   <ExCell v={s.ex1m} />
                   <ExCell v={s.ex3m} bold />
                   <ExCell v={s.ex6m} className="hidden md:table-cell" />
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-1 py-2 text-right">
                     <button
                       onClick={() => onPick(s.row.ticker)}
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors",
+                        "inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold transition-colors",
                         isSelected
                           ? "bg-primary text-primary-foreground"
                           : "border border-border/40 text-muted-foreground hover:bg-primary/10 hover:text-primary",
                       )}
                     >
-                      {isSelected ? "선택됨" : "선택"} {!isSelected && <ArrowRight className="h-3 w-3" />}
+                      {isSelected ? "선택됨" : (<>선택 <ArrowRight className="h-3 w-3" /></>)}
                     </button>
                   </td>
                 </tr>
