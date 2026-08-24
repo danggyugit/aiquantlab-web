@@ -545,6 +545,28 @@ export async function getAllBacktestPresets(): Promise<BacktestPreset[]> {
     .map((r) => r.value);
 }
 
+/**
+ * Lightweight variant of getAllBacktestPresets — strips the heavy `full`
+ * payload (equity curves, rebalance history, IC records, feature importance)
+ * from every preset. Reduces the page's ISR payload from ~40 MB to under 1 MB
+ * (well below Vercel's 19 MB FALLBACK_BODY_TOO_LARGE cap) while keeping
+ * everything the preset loader needs to show (name / config / summary / today
+ * picks). Callers that need `full` load it lazily via getBacktestPreset(id).
+ */
+export async function getAllBacktestPresetsSummary(): Promise<BacktestPreset[]> {
+  const results = await Promise.allSettled(
+    BACKTEST_PRESET_IDS.map((id) => getBacktestPreset(id)),
+  );
+  return results
+    .filter((r): r is PromiseFulfilledResult<BacktestPreset> => r.status === "fulfilled")
+    .map((r) => {
+      // Also drop today_full_ranking (up to 500 tickers × ~10 fields each on
+      // cross-sector presets) since the loader UI only uses today_picks.
+      const { full: _full, today_full_ranking: _ranking, ...rest } = r.value;
+      return rest as BacktestPreset;
+    });
+}
+
 /** sec/_metadata.json — one entry per CIK with latest_period. */
 export function getSec13FMetadata(): Promise<Sec13FMetadata> {
   return fetchCache<Sec13FMetadata>("sec/_metadata.json");

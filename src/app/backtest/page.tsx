@@ -1,5 +1,10 @@
 import { Sparkles } from "lucide-react";
-import { getAllBacktestPresets, getStocksMeta } from "@/lib/data";
+import {
+  BACKTEST_PRESET_IDS,
+  getAllBacktestPresetsSummary,
+  getBacktestPreset,
+  getStocksMeta,
+} from "@/lib/data";
 import { MarketBadge } from "@/components/market-badge";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,7 +22,20 @@ export const revalidate = 900;
  *      Render Free's 10-min HTTP timeout so we serve precomputed presets only
  */
 export default async function BacktestPage() {
-  const [presets, stocks] = await Promise.all([getAllBacktestPresets(), getStocksMeta()]);
+  // Loader UI only needs metadata — never the multi-MB `full` history payload.
+  // We pull one preset's full data for the initial display so users see a
+  // populated result on first paint; every other preset lazy-loads its full
+  // JSON client-side when the user picks it (see Lab.handleLoadPreset).
+  // Without this split the ISR page hits Vercel's 19 MB FALLBACK cap.
+  const initialId = BACKTEST_PRESET_IDS[0];
+  const [summaries, firstFull, stocks] = await Promise.all([
+    getAllBacktestPresetsSummary(),
+    getBacktestPreset(initialId).catch(() => null),
+    getStocksMeta(),
+  ]);
+  const presets = firstFull
+    ? summaries.map((p) => (p.preset_id === firstFull.preset_id ? firstFull : p))
+    : summaries;
   const sectors = Array.from(new Set(stocks.map((s) => s.sector))).filter(Boolean).sort();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 

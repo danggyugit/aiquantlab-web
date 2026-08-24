@@ -1,6 +1,12 @@
 "use client";
 
 import { useState } from "react";
+
+// Same raw GitHub URL pattern as data.ts's fetchCache. Duplicated here because
+// we're in a client component and Next's server-side fetchCache with revalidate
+// isn't usable from the browser.
+const PRESET_URL = (id: string) =>
+  `https://raw.githubusercontent.com/danggyugit/stock-dashboard/main/streamlit_app/data/cache/backtests/${id}.json`;
 import { Play, Zap } from "lucide-react";
 import type { BacktestConfig, BacktestPreset } from "@/lib/data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -110,10 +116,28 @@ export function Lab({ presets, presetLoadedInitial, apiUrl, hideConfig }: Props)
     }, 30);
   }
 
-  function handleLoadPreset(id: string) {
+  async function handleLoadPreset(id: string) {
     const p = presets.find((x) => x.preset_id === id);
     if (!p) return;
     setConfig({ ...p.config });
+    // If the summary payload was stripped of `full` on the server (to keep
+    // the ISR page under Vercel's 19 MB cap), fetch the full JSON now so
+    // result-tabs can render equity curves, IC history, etc.
+    if (!p.full) {
+      setIsRunning(true);
+      try {
+        const res = await fetch(PRESET_URL(id), { cache: "no-store" });
+        if (res.ok) {
+          const fullPreset = (await res.json()) as BacktestPreset;
+          setLoaded({ preset: fullPreset, exact: true, source: "preset" });
+          setIsRunning(false);
+          return;
+        }
+      } catch {
+        // fall through — display the metadata-only preset
+      }
+      setIsRunning(false);
+    }
     setLoaded({ preset: p, exact: true, source: "preset" });
   }
 
