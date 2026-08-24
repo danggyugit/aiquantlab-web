@@ -10,6 +10,15 @@
  *  - /ai-quant-lab,
  *    /factor-lab      → /backtest 탭
  *  - /stock-lab       → 사이드바에서 제거 (외부 리다이렉트 라우트는 유지)
+ *
+ * 섹션 재구성 이력:
+ *  - v1 (4섹션): Market Overview / Stock Research / Analysis / Guide
+ *  - v2 (5섹션, 현재): 시장 / 리서치 / 내 자산 / 전략 / 가이드
+ *    · SEC Intelligence: Analysis → 리서치 (13F 발굴 성격)
+ *    · 관심목록: 리서치 → 내 자산 (개인 데이터로 재정의)
+ *    · 포트폴리오: Analysis → 내 자산 (관심목록과 짝)
+ *    · 백테스트: Analysis → 전략 (독립 섹션, premium 강조)
+ *    · 리서치 순서: 발굴(스크리너) → 상세 → 비교 흐름 맞춤
  */
 
 import type { LucideIcon } from "lucide-react";
@@ -52,7 +61,7 @@ export type NavSection = {
 
 export const NAV_SECTIONS: NavSection[] = [
   {
-    label: "Market Overview",
+    label: "시장",
     items: [
       { href: "/", label: "홈", icon: Home },
       { href: "/heatmap", label: "히트맵", icon: Grid2X2 },
@@ -62,26 +71,33 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "Stock Research",
+    label: "리서치",
     items: [
       { href: "/top-down", label: "Top-Down 분석", icon: Compass, premium: true },
+      { href: "/screener", label: "스크리너", icon: ScanSearch },
       { href: "/stock", label: "종목 상세", icon: LineChart },
       { href: "/compare", label: "종목 비교", icon: GitCompareArrows },
-      { href: "/screener", label: "스크리너", icon: ScanSearch },
-      { href: "/watchlist", label: "관심목록", icon: Star },
+      { href: "/sec-intelligence", label: "SEC Intelligence", icon: Landmark },
     ],
   },
   {
-    label: "Analysis",
+    label: "내 자산",
     items: [
-      { href: "/backtest", label: "백테스트", icon: FlaskConical, premium: true },
-      { href: "/sec-intelligence", label: "SEC Intelligence", icon: Landmark },
+      { href: "/watchlist", label: "관심목록", icon: Star },
       { href: "/portfolio", label: "포트폴리오", icon: FolderKanban },
     ],
   },
   {
-    label: "Guide",
-    items: [{ href: "/guide", label: "가이드", icon: BookOpen }],
+    label: "전략",
+    items: [
+      { href: "/backtest", label: "백테스트", icon: FlaskConical, premium: true },
+    ],
+  },
+  {
+    label: "가이드",
+    items: [
+      { href: "/guide", label: "가이드", icon: BookOpen },
+    ],
   },
 ];
 
