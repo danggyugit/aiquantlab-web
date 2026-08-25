@@ -16,7 +16,7 @@ import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { HeatmapWithControls } from "@/components/heatmap-with-controls";
-import { IndexMiniChart } from "@/components/index-mini-chart";
+import { IndexHero, type IndexTile } from "@/components/index-hero";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "AI Quant Lab · 홈" };
@@ -50,35 +50,28 @@ export default async function Home() {
   const toMini = (hist: Array<{ date: string; close: number }> | undefined) =>
     (hist ?? []).slice(-30).map((p) => ({ t: p.date, v: p.close }));
 
-  const spyHist = toMini(snapshot.breadth.history);
-  const vixHist = toMini(snapshot.vix.history);
-  const goldHist = toMini(snapshot.commodities.gold.history);
-  const oilHist = toMini(snapshot.commodities.oil_wti.history);
+  // Build initial values for the polling hero tiles. SSR shows these from
+  // the daily cached snapshot; the client component replaces them with
+  // live Finnhub quotes during US market hours.
+  const qqq = snapshot.global_indices?.qqq;
+  const spyMini = toMini(snapshot.breadth.history);
+  const vixMini = toMini(snapshot.vix.history);
+  const qqqMini = toMini(qqq?.history);
 
-  const spyPrice = snapshot.breadth.spy_close;
-  const spyChangePct =
+  const spyChangePctInit =
     ((snapshot.breadth.spy_close - snapshot.breadth.sma200) / snapshot.breadth.sma200) * 100;
-  const vixChangePct = ((snapshot.vix.current - snapshot.vix.avg) / snapshot.vix.avg) * 100;
+  const vixChangePctInit = ((snapshot.vix.current - snapshot.vix.avg) / snapshot.vix.avg) * 100;
+  const qqqChangePctInit = qqq
+    ? ((qqq.current - qqq.avg) / qqq.avg) * 100
+    : 0;
 
-  const indices = [
-    { label: "S&P 500 (SPY)", value: spyPrice.toLocaleString(), changePct: spyChangePct, mini: spyHist },
-    { label: "VIX",           value: snapshot.vix.current.toFixed(2), changePct: vixChangePct, mini: vixHist },
-    {
-      label: "Gold",
-      value: snapshot.commodities.gold.current.toLocaleString(),
-      changePct:
-        ((snapshot.commodities.gold.current - snapshot.commodities.gold.avg) /
-          snapshot.commodities.gold.avg) * 100,
-      mini: goldHist,
-    },
-    {
-      label: "WTI Oil",
-      value: snapshot.commodities.oil_wti.current.toFixed(2),
-      changePct:
-        ((snapshot.commodities.oil_wti.current - snapshot.commodities.oil_wti.avg) /
-          snapshot.commodities.oil_wti.avg) * 100,
-      mini: oilHist,
-    },
+  // Dow (DIA) isn't in the daily snapshot yet — polling fills it. Start at 0
+  // so the tile shows "-" until the first quote lands (typically <1s).
+  const indexTiles: IndexTile[] = [
+    { label: "Dow (DIA)",  symbol: "DIA",  initialValue: 0,                             initialChangePct: 0,                mini: [],      digits: 2 },
+    { label: "S&P 500",    symbol: "SPY",  initialValue: snapshot.breadth.spy_close,    initialChangePct: spyChangePctInit, mini: spyMini, digits: 2 },
+    { label: "NASDAQ 100", symbol: "QQQ",  initialValue: qqq?.current ?? 0,             initialChangePct: qqqChangePctInit, mini: qqqMini, digits: 2 },
+    { label: "VIX",        symbol: "^VIX", initialValue: snapshot.vix.current,          initialChangePct: vixChangePctInit, mini: vixMini, digits: 2 },
   ];
 
   // Top 200 by market cap for the home heatmap (period selector uses backend returns)
@@ -113,38 +106,8 @@ export default async function Home() {
         <p className="text-[11px] text-muted-foreground">Updated {updatedAt} KST</p>
       </header>
 
-      {/* Market Indices */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Market Indices</h2>
-          <Badge variant="secondary" className="text-[10px]">자동 갱신 15분</Badge>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {indices.map((idx) => (
-            <MetricTile key={idx.label} {...idx} />
-          ))}
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {indices.map((idx) => (
-            <Card key={idx.label}>
-              <CardHeader className="pb-1">
-                <CardTitle className="text-[10px] font-medium text-muted-foreground">
-                  {idx.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {idx.mini.length > 1 ? (
-                  <IndexMiniChart data={idx.mini} isUp={idx.changePct >= 0} />
-                ) : (
-                  <div className="flex h-[80px] items-center justify-center text-[10px] text-muted-foreground">
-                    히스토리 없음
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
+      {/* Market Indices — polled ~30s during US market hours */}
+      <IndexHero tiles={indexTiles} />
 
       {/* Global Indices + FX — cross-market snapshot */}
       {(snapshot.global_indices || snapshot.fx) && (

@@ -21,6 +21,39 @@ async function safeGet<T>(path: string, revalidateSec = 900, timeoutMs = 8000): 
   }
 }
 
+// ── Real-time quote (15-min delayed on free tier) ────────────
+export type Quote = {
+  c: number;   // current price
+  d: number;   // change vs prev close
+  dp: number;  // % change vs prev close
+  h: number;   // day high
+  l: number;   // day low
+  o: number;   // day open
+  pc: number;  // previous close
+  t: number;   // unix timestamp
+};
+
+/**
+ * Client-safe quote fetcher — bypasses Next fetch cache (no revalidate)
+ * so home page polling always sees the freshest server-cached value.
+ * Falls back to null on any error so the UI can keep the last-good value.
+ */
+export async function fetchQuote(symbol: string): Promise<Quote | null> {
+  if (!API_BASE) return null;
+  try {
+    const res = await fetch(`${API_BASE}/finnhub/quote?symbol=${encodeURIComponent(symbol)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const q = (await res.json()) as Quote;
+    // Finnhub returns c=0 for unknown symbols; treat as unavailable.
+    return q && typeof q.c === "number" && q.c > 0 ? q : null;
+  } catch {
+    return null;
+  }
+}
+
 export type NewsItem = {
   headline: string;
   summary: string;
