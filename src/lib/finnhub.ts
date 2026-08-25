@@ -54,6 +54,26 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
   }
 }
 
+/**
+ * Client-side market news fetcher — tolerates Render's 30-60s cold
+ * start with a 60s timeout, unlike safeGet's 8s server timeout.
+ * Used by sections that can afford to render "loading..." while the
+ * backend wakes up (Sentiment section 4, etc.).
+ */
+export async function fetchMarketNewsClient(category = "general"): Promise<NewsItem[] | null> {
+  if (!API_BASE) return null;
+  try {
+    const res = await fetch(`${API_BASE}/finnhub/market-news?category=${encodeURIComponent(category)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as NewsItem[];
+  } catch {
+    return null;
+  }
+}
+
 export type NewsItem = {
   headline: string;
   summary: string;
