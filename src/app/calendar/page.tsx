@@ -5,7 +5,7 @@ import { MarketBadge } from "@/components/market-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { API_BASE, cn } from "@/lib/utils";
 
 export const metadata = { title: "캘린더 · AI Quant Lab" };
 export const revalidate = 900;
@@ -103,7 +103,7 @@ export default async function CalendarPage() {
   const fromDate = `${year}-${String(month).padStart(2, "0")}-01`;
   const toDate = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
 
-  const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+  const apiBase = API_BASE;
 
   // ── Fetch real data (parallel) ────────────────────────────────────
   const [earningsRaw, econRaw] = apiBase

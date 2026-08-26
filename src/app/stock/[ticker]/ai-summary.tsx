@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
+import { API_BASE } from "@/lib/utils";
 
 /**
  * Client-side fetch for the Gemini earnings summary.
@@ -46,11 +47,7 @@ export function AiEarningsSummary(props: Props) {
   const [refetchTick, setRefetchTick] = useState(0);
 
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-    if (!apiBase) {
-      setState({ kind: "error", msg: "NEXT_PUBLIC_API_URL 미설정" });
-      return;
-    }
+    const apiBase = API_BASE;
     setState({ kind: "loading" });
     const controller = new AbortController();
     (async () => {

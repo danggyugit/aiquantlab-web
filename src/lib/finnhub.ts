@@ -5,7 +5,7 @@
  * a "not configured / unavailable" fallback instead of erroring.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+import { API_BASE } from "@/lib/utils";
 
 async function safeGet<T>(path: string, revalidateSec = 900, timeoutMs = 8000): Promise<T | null> {
   if (!API_BASE) return null;

@@ -5,6 +5,7 @@ import {
   getBacktestPreset,
   getStocksMeta,
 } from "@/lib/data";
+import { API_BASE } from "@/lib/utils";
 import { MarketBadge } from "@/components/market-badge";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -37,7 +38,7 @@ export default async function BacktestPage() {
     ? summaries.map((p) => (p.preset_id === firstFull.preset_id ? firstFull : p))
     : summaries;
   const sectors = Array.from(new Set(stocks.map((s) => s.sector))).filter(Boolean).sort();
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = API_BASE;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
