@@ -55,6 +55,17 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
 }
 
 /**
+ * Server-side quote fetcher. Used in initial page render so tiles
+ * always show a meaningful value (current during market hours, prev
+ * close after hours) even if the browser can't reach the API. Longer
+ * 25s timeout accommodates Render cold starts; 5min ISR revalidate.
+ * Falls back to null on error — caller renders snapshot value.
+ */
+export async function getQuoteServer(symbol: string): Promise<Quote | null> {
+  return safeGet<Quote>(`/finnhub/quote?symbol=${encodeURIComponent(symbol)}`, 300, 25_000);
+}
+
+/**
  * Client-side market news fetcher — tolerates Render's 30-60s cold
  * start with a 60s timeout, unlike safeGet's 8s server timeout.
  * Used by sections that can afford to render "loading..." while the

@@ -12,6 +12,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { getHeatmap, getMarketSnapshot, getRotationEval, latestQuote } from "@/lib/data";
+import { getQuoteServer } from "@/lib/finnhub";
 import { MarketBadge } from "@/components/market-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,39 +40,54 @@ const FEATURES = [
  *  4. Feature grid → 6 CTAs
  */
 export default async function Home() {
-  const [snapshot, heatmap, rotation] = await Promise.all([
+  // Fetch initial hero quotes on the server so the tiles always render
+  // a real value — during market hours it's the last quote (15min delayed
+  // on Finnhub free tier), after hours it's the previous close from `pc`.
+  // Prevents the "DIA 0.00" blank-tile UX when the client can't reach the
+  // API (env-var missing, CORS blocked, browser offline, etc.).
+  const [snapshot, heatmap, rotation, diaQuote, spyQuote, qqqQuote] = await Promise.all([
     getMarketSnapshot(),
     getHeatmap(),
     getRotationEval("ensemble"),
+    getQuoteServer("DIA"),
+    getQuoteServer("SPY"),
+    getQuoteServer("QQQ"),
   ]);
+  // ^VIX is a CFD index that Finnhub's free tier doesn't serve — we
+  // always source VIX from the daily snapshot cache instead.
 
   // Build indices from snapshot history (added by fetch_cache.build_market_snapshot).
   // Each `hist` is a 90-day array of {date, close} — mini charts consume the last 30.
   const toMini = (hist: Array<{ date: string; close: number }> | undefined) =>
     (hist ?? []).slice(-30).map((p) => ({ t: p.date, v: p.close }));
 
-  // Build initial values for the polling hero tiles. SSR shows these from
-  // the daily cached snapshot; the client component replaces them with
-  // live Finnhub quotes during US market hours.
+  // Build initial values for the polling hero tiles.
+  //   1. Prefer live-ish Finnhub /quote (server-side): during market hours
+  //      shows current, after hours shows prev close via `pc` fallback.
+  //   2. Snapshot from the daily cache if the quote call failed.
+  //   3. Zero as last resort.
   const qqq = snapshot.global_indices?.qqq;
   const spyMini = toMini(snapshot.breadth.history);
   const vixMini = toMini(snapshot.vix.history);
   const qqqMini = toMini(qqq?.history);
 
-  const spyChangePctInit =
-    ((snapshot.breadth.spy_close - snapshot.breadth.sma200) / snapshot.breadth.sma200) * 100;
-  const vixChangePctInit = ((snapshot.vix.current - snapshot.vix.avg) / snapshot.vix.avg) * 100;
-  const qqqChangePctInit = qqq
-    ? ((qqq.current - qqq.avg) / qqq.avg) * 100
-    : 0;
+  // Helper: current if we have a fresh quote, else fall back cleanly.
+  const q = (quote: { c: number; dp: number; pc: number } | null, fallbackVal = 0, fallbackPct = 0) =>
+    quote && quote.c > 0
+      ? { value: quote.c, changePct: quote.dp }
+      : { value: fallbackVal, changePct: fallbackPct };
 
-  // Dow (DIA) isn't in the daily snapshot yet — polling fills it. Start at 0
-  // so the tile shows "-" until the first quote lands (typically <1s).
+  const vixChangePctInit = ((snapshot.vix.current - snapshot.vix.avg) / snapshot.vix.avg) * 100;
+
+  const dia = q(diaQuote);
+  const spy = q(spyQuote, snapshot.breadth.spy_close, 0);
+  const qqqInit = q(qqqQuote, qqq?.current ?? 0, 0);
+
   const indexTiles: IndexTile[] = [
-    { label: "Dow (DIA)",  symbol: "DIA",  initialValue: 0,                             initialChangePct: 0,                mini: [],      digits: 2 },
-    { label: "S&P 500",    symbol: "SPY",  initialValue: snapshot.breadth.spy_close,    initialChangePct: spyChangePctInit, mini: spyMini, digits: 2 },
-    { label: "NASDAQ 100", symbol: "QQQ",  initialValue: qqq?.current ?? 0,             initialChangePct: qqqChangePctInit, mini: qqqMini, digits: 2 },
-    { label: "VIX",        symbol: "^VIX", initialValue: snapshot.vix.current,          initialChangePct: vixChangePctInit, mini: vixMini, digits: 2 },
+    { label: "Dow (DIA)",  symbol: "DIA",  initialValue: dia.value,             initialChangePct: dia.changePct,     mini: [],      digits: 2 },
+    { label: "S&P 500",    symbol: "SPY",  initialValue: spy.value,             initialChangePct: spy.changePct,     mini: spyMini, digits: 2 },
+    { label: "NASDAQ 100", symbol: "QQQ",  initialValue: qqqInit.value,         initialChangePct: qqqInit.changePct, mini: qqqMini, digits: 2 },
+    { label: "VIX",        symbol: "^VIX", initialValue: snapshot.vix.current,  initialChangePct: vixChangePctInit,  mini: vixMini, digits: 2 },
   ];
 
   // Top 200 by market cap for the home heatmap (period selector uses backend returns)

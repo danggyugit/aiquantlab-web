@@ -126,7 +126,7 @@ export function IndexHero({ tiles }: { tiles: IndexTile[] }) {
       <p className="mt-2 text-[10px] text-muted-foreground">
         {marketOpen
           ? "30초마다 자동 갱신 · 시세 15분 지연 (Finnhub 무료 티어)"
-          : "미장 마감 중 · 마지막 캐시 값 표시. 개장 시 실시간 갱신 재개."}
+          : "미장 마감 · 전일 종가 표시 · 개장 시 자동 갱신 재개"}
       </p>
     </section>
   );
