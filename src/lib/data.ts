@@ -168,6 +168,13 @@ export type StockMeta = {
   sector: string;
   industry: string;
   cap_tier: string;
+  /**
+   * "sp1500"     — S&P 500/400/600 member (index-based tier, backtest-eligible)
+   * "supplement" — non-S&P US large/mid cap (>= $5B) added for screening only.
+   *                No index membership history, so never used in backtests.
+   * Absent on caches written before this field existed → treat as sp1500.
+   */
+  universe?: "sp1500" | "supplement";
 };
 
 // Backtest preset (from data/cache/backtests/*.json).
