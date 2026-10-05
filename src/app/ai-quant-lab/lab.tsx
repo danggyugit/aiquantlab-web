@@ -8,6 +8,7 @@ import { useState } from "react";
 const PRESET_URL = (id: string) =>
   `https://raw.githubusercontent.com/danggyugit/stock-dashboard/main/streamlit_app/data/cache/backtests/${id}.json`;
 import { Play, Zap } from "lucide-react";
+import { presetDataDate } from "@/lib/data";
 import type { BacktestConfig, BacktestPreset } from "@/lib/data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -414,6 +415,7 @@ function PresetLoader({
   const selected = activePresets.find((p) => p.preset_id === presetId) ?? activePresets[0];
   const s = selected?.summary;
   const cagr = s?.cagr_pct;
+  const dataDate = selected ? presetDataDate(selected) : null;
   const cagrColor =
     cagr === undefined ? "text-muted-foreground"
       : cagr >= 20 ? "text-success"
@@ -492,6 +494,11 @@ function PresetLoader({
               <span>MDD {s?.max_dd_pct?.toFixed(1) ?? "-"}%</span>
               <span>변동성 {s?.volatility_pct?.toFixed(1) ?? "-"}%</span>
               <span>승률 {s?.monthly_win_rate_pct?.toFixed(0) ?? "-"}%</span>
+            </div>
+            <div className="mt-1.5 text-[11px] text-muted-foreground">
+              데이터 기준일{" "}
+              <span className="font-mono tabular-nums text-foreground">{dataDate?.asOf ?? "-"}</span>
+              {dataDate?.updatedKst && <span> · 갱신 {dataDate.updatedKst}</span>}
             </div>
             <Button
               onClick={() => onLoad(selected.preset_id)}

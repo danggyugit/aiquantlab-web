@@ -343,6 +343,28 @@ export type BacktestPreset = {
   updated_at?: string;
 };
 
+/**
+ * "Which day is this data from?" for a preset. `asOf` is the market date the
+ * picks were computed for (YYYY-MM-DD); `updatedKst` is when the batch wrote
+ * the file, shifted to KST by hand (no Intl) so server and client render the
+ * same string.
+ */
+export function presetDataDate(
+  p: Pick<BacktestPreset, "today_picks_at" | "updated_at">,
+): { asOf: string | null; updatedKst: string | null } {
+  const asOf = p.today_picks_at ? p.today_picks_at.slice(0, 10) : null;
+  let updatedKst: string | null = null;
+  const ms = p.updated_at ? Date.parse(p.updated_at) : NaN;
+  if (!Number.isNaN(ms)) {
+    const k = new Date(ms + 9 * 3600 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    updatedKst =
+      `${k.getUTCFullYear()}-${pad(k.getUTCMonth() + 1)}-${pad(k.getUTCDate())} ` +
+      `${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())} KST`;
+  }
+  return { asOf, updatedKst };
+}
+
 // 50-preset matrix: 10 sectors × 5 strategies (see
 // stock-dashboard/streamlit_app/scripts/run_preset_backtests.py:SECTORS + STRATEGIES).
 // Sector codes: it, hc, fin, cd, cs, ind, staples, en, mat, re

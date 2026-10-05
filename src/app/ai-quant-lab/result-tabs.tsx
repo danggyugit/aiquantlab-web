@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { presetDataDate } from "@/lib/data";
 import type {
   BacktestPreset, ForwardEval, ForwardSnapshot,
   RotationEval, RotationVariant, RotationTodaySectorEntry,
@@ -94,8 +95,17 @@ export function ResultTabs({
     return () => { cancelled = true; };
   }, [strategyKey]);
 
+  const dataDate = presetDataDate(preset);
+
   return (
     <div className="flex flex-col gap-4">
+      {source === "preset" && (dataDate.asOf || dataDate.updatedKst) && (
+        <div className="text-xs text-muted-foreground">
+          데이터 기준일{" "}
+          <span className="font-mono tabular-nums text-foreground">{dataDate.asOf ?? "-"}</span>
+          {dataDate.updatedKst && <span> · 갱신 {dataDate.updatedKst}</span>}
+        </div>
+      )}
       {source === "api" && (
         <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-xs text-success">
           <AlertCircle className="mr-1 inline h-3 w-3" />
