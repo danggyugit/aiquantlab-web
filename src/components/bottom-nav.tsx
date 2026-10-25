@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Grid2X2, Home, Menu, Sparkles, Star } from "lucide-react";
+import { Grid2X2, Home, Menu, ScanSearch, Sparkles } from "lucide-react";
 import { NAV_SECTIONS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -12,8 +12,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 const PRIMARY = [
   { href: "/", label: "홈", icon: Home },
   { href: "/heatmap", label: "히트맵", icon: Grid2X2 },
-  { href: "/watchlist", label: "관심", icon: Star },
-  { href: "/ai-quant-lab", label: "AI", icon: Sparkles, premium: true },
+  { href: "/screener", label: "스크리너", icon: ScanSearch },
+  // /ai-quant-lab only redirects to /backtest; link there directly so the
+  // tab stays highlighted after navigation.
+  { href: "/backtest", label: "AI", icon: Sparkles, premium: true },
 ];
 
 export function BottomNav() {
