@@ -25,6 +25,10 @@ type StrategyMeta = {
 
 export const STRATEGIES: StrategyMeta[] = [
   // Price-based
+  { key: "rs_momentum", name: "RS 모멘텀 (스크리너 기준)", short: "SPY 대비 3M 초과수익 상위 — 1M·3M·6M 모두 SPY보다 강한 종목만", category: "price",
+    long: "스크리너 RS 모멘텀 탭과 같은 기준입니다. 각 리밸런싱 시점에 1M·3M·6M 수익률이 모두 SPY를 앞서는 종목('Rising Leader')만 남기고, 그중 3M 초과수익이 가장 큰 종목을 보유합니다." },
+  { key: "ibd_rs", name: "IBD RS (12M 가중)", short: "O'Neil 방식 12개월 가중 상대강도 상위 (최근 분기 40%)", category: "price",
+    long: "스크리너의 IBD RS 컬럼과 같은 계산입니다. 최근 3개월 40%, 그 이전 3개월 30%, 나머지 6개월 30% 가중치의 12개월 가격 변화율로 순위를 매깁니다." },
   { key: "momentum_12m", name: "12개월 모멘텀", short: "지난 12개월 수익률 상위 종목", category: "price",
     long: "최근 12개월 동안 가장 많이 오른 종목을 보유하는 전략입니다. 단기 평균회귀(t-1월)를 포함한 원시 12개월 수익률 기준." },
   { key: "momentum_3_12m", name: "3-12개월 모멘텀", short: "12개월 수익률 – 최근 1개월 (단기 반전 제거)", category: "price",
