@@ -116,6 +116,17 @@ type FactorBacktestResponse = {
   warnings: string[];
 };
 
+/** Strategies the nightly grid actually produced results for. A strategy whose
+ *  features the batch engine can't compute (some Tier-B PIT factors) is in the
+ *  registry but has no usable variants, so it is hidden rather than 404-ing. */
+function availableStrategies(index: FactorIndex | null): StrategyMeta[] {
+  if (!index) return STRATEGIES;
+  return STRATEGIES.filter((s) => {
+    const entry = index.strategies[s.key];
+    return entry && Object.values(entry.variants).some((v) => v.n_rebalances > 0);
+  });
+}
+
 type StoredResult = Omit<FactorBacktestResponse, "equity_curve"> & {
   equity: { dates: string[]; portfolio: (number | null)[]; spy: (number | null)[] };
 };
@@ -234,7 +245,8 @@ function SingleTab({ index }: { index: FactorIndex | null }) {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selected = STRATEGIES.find((s) => s.key === strategy);
+  const strategies = availableStrategies(index);
+  const selected = strategies.find((s) => s.key === strategy);
 
   async function handleRun() {
     setIsRunning(true);
@@ -264,7 +276,7 @@ function SingleTab({ index }: { index: FactorIndex | null }) {
               <Select value={strategy} onValueChange={(v) => setStrategy((v as string) ?? "rs_momentum")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {STRATEGIES.map((s) => (
+                  {strategies.map((s) => (
                     <SelectItem key={s.key} value={s.key}>
                       {s.name} ({s.short})
                     </SelectItem>
@@ -410,6 +422,7 @@ function SingleResult({ data }: { data: FactorBacktestResponse }) {
 function CompareTab({ index }: { index: FactorIndex | null }) {
   const [selectedKeys, setSelectedKeys] = useState<string[]>(["rs_momentum", "rs_momentum_broad", "rs_3m", "momentum_12m"]);
   const [form, setForm] = useState<VariantForm>({ rebalance: 1, nStocks: 5, cap: "all" });
+  const strategies = availableStrategies(index);
   const [results, setResults] = useState<Array<{ key: string; data?: FactorBacktestResponse; error?: string }>>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -455,7 +468,7 @@ function CompareTab({ index }: { index: FactorIndex | null }) {
               비교할 전략 (최대 5개, 현재 {selectedKeys.length}개)
             </Label>
             <div className="flex flex-wrap gap-1.5">
-              {STRATEGIES.map((s) => {
+              {strategies.map((s) => {
                 const on = selectedKeys.includes(s.key);
                 return (
                   <button
@@ -552,7 +565,7 @@ function GridRanking({ index, form }: { index: FactorIndex | null; form: Variant
   const vid = factorVariantId(form.cap, form.rebalance, form.nStocks);
   const rows = Object.entries(index.strategies)
     .map(([key, s]) => ({ key, name: s.name, category: s.category, v: s.variants[vid] }))
-    .filter((r) => r.v)
+    .filter((r) => r.v && r.v.n_rebalances > 0)
     .sort((a, b) => (b.v.metrics.cagr_pct ?? -Infinity) - (a.v.metrics.cagr_pct ?? -Infinity));
   if (rows.length === 0) return null;
   const spy = rows[0].v.spy;
