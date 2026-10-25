@@ -3,9 +3,8 @@ import {
   BACKTEST_PRESET_IDS,
   getAllBacktestPresetsSummary,
   getBacktestPreset,
-  getStocksMeta,
+  getFactorIndex,
 } from "@/lib/data";
-import { API_BASE } from "@/lib/utils";
 import { MarketBadge } from "@/components/market-badge";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,8 +16,9 @@ export const revalidate = 900;
 
 /**
  * Unified backtest workbench — 2 tabs:
- *   1. 룰 기반 (Factor Lab): real-time execution via FastAPI /factor-backtest
- *      (20+ pure rank_fn strategies, 5-15s per run on Render Free)
+ *   1. 룰 기반 (Factor Lab): precomputed nightly grid (25+ rank_fn strategies ×
+ *      cap/rebalance/holdings variants) read from the stock-dashboard cache —
+ *      the Render API took 2+ min per run once the universe grew to S&P 1500
  *   2. AI 프리셋 (AI Quant Lab): ML ensemble presets — full pipeline exceeds
  *      Render Free's 10-min HTTP timeout so we serve precomputed presets only
  */
@@ -29,16 +29,14 @@ export default async function BacktestPage() {
   // JSON client-side when the user picks it (see Lab.handleLoadPreset).
   // Without this split the ISR page hits Vercel's 19 MB FALLBACK cap.
   const initialId = BACKTEST_PRESET_IDS[0];
-  const [summaries, firstFull, stocks] = await Promise.all([
+  const [summaries, firstFull, factorIndex] = await Promise.all([
     getAllBacktestPresetsSummary(),
     getBacktestPreset(initialId).catch(() => null),
-    getStocksMeta(),
+    getFactorIndex(),
   ]);
   const presets = firstFull
     ? summaries.map((p) => (p.preset_id === firstFull.preset_id ? firstFull : p))
     : summaries;
-  const sectors = Array.from(new Set(stocks.map((s) => s.sector))).filter(Boolean).sort();
-  const apiUrl = API_BASE;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
@@ -70,7 +68,7 @@ export default async function BacktestPage() {
       <Tabs defaultValue="rule">
         <TabsList className="flex flex-wrap gap-1 bg-transparent p-0">
           <TabsTrigger value="rule" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            🎯 룰 기반 (실시간 실행)
+            🎯 룰 기반 (매일 사전 계산)
           </TabsTrigger>
           <TabsTrigger value="ml" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             🤖 AI 앙상블 (프리셋)
@@ -78,7 +76,7 @@ export default async function BacktestPage() {
         </TabsList>
 
         <TabsContent value="rule" className="mt-4">
-          <FactorLabClient presets={presets} sectors={sectors} apiUrl={apiUrl} />
+          <FactorLabClient factorIndex={factorIndex} />
         </TabsContent>
 
         <TabsContent value="ml" className="mt-4">

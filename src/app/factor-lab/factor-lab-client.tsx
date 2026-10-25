@@ -6,11 +6,10 @@ import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import type { BacktestPreset } from "@/lib/data";
+import { FACTOR_CACHE_BASE, factorVariantId, type FactorIndex } from "@/lib/data";
 import { FactorEquityChart, type EquityPoint } from "./factor-equity-chart";
 
 // ── Full strategy registry mirroring streamlit_app/services/factor_strategies.py ──
@@ -29,6 +28,10 @@ export const STRATEGIES: StrategyMeta[] = [
     long: "스크리너 RS 모멘텀 탭과 같은 기준입니다. 각 리밸런싱 시점에 1M·3M·6M 수익률이 모두 SPY를 앞서는 종목('Rising Leader')만 남기고, 그중 3M 초과수익이 가장 큰 종목을 보유합니다." },
   { key: "ibd_rs", name: "IBD RS (12M 가중)", short: "O'Neil 방식 12개월 가중 상대강도 상위 (최근 분기 40%)", category: "price",
     long: "스크리너의 IBD RS 컬럼과 같은 계산입니다. 최근 3개월 40%, 그 이전 3개월 30%, 나머지 6개월 30% 가중치의 12개월 가격 변화율로 순위를 매깁니다." },
+  { key: "rs_momentum_broad", name: "RS 모멘텀 확장 (매수 패턴 3종)", short: "Rising Leader + Hot 3M + Recovery 패턴 중 3M 초과수익 상위", category: "price",
+    long: "RS 모멘텀과 같은 순위를 쓰되, 패턴 가이드가 매수 쪽으로 읽는 세 패턴을 모두 허용합니다. 1M은 SPY를 앞서고 3M 또는 6M 중 하나 이상 앞서면 후보입니다." },
+  { key: "rs_3m", name: "RS 3M 초과수익 (패턴 무관)", short: "패턴 필터 없이 SPY 대비 3M 초과수익 상위", category: "price",
+    long: "스크리너 RS 모멘텀 탭의 기본 화면(패턴 '전체')과 같습니다. RS 모멘텀·확장판과 나란히 보면 패턴 필터의 효과가 드러납니다." },
   { key: "momentum_12m", name: "12개월 모멘텀", short: "지난 12개월 수익률 상위 종목", category: "price",
     long: "최근 12개월 동안 가장 많이 오른 종목을 보유하는 전략입니다. 단기 평균회귀(t-1월)를 포함한 원시 12개월 수익률 기준." },
   { key: "momentum_3_12m", name: "3-12개월 모멘텀", short: "12개월 수익률 – 최근 1개월 (단기 반전 제거)", category: "price",
@@ -62,11 +65,8 @@ export const STRATEGIES: StrategyMeta[] = [
 const REBAL_OPTS = [
   { value: 1, label: "월별" },
   { value: 3, label: "분기" },
-  { value: 6, label: "반기" },
-  { value: 12, label: "연간" },
 ];
 
-const CAP_OPTS = ["전체", "Large Cap", "Mid Cap", "Small Cap"];
 
 const CATEGORY_LABEL: Record<StrategyMeta["category"], string> = {
   price: "가격",
@@ -79,19 +79,17 @@ const CATEGORY_COLOR: Record<StrategyMeta["category"], string> = {
   hybrid: "bg-premium/20 text-premium",
 };
 
-type FormState = {
-  strategy: string;
-  startDate: string;
-  endDate: string;
-  rebalance: number;
-  nStocks: string;
-  tc: string;
-  sector: string;
-  cap: string;
+// One cell of the precomputed grid. The nightly script computes every
+// combination of these, so the form offers exactly these choices.
+type VariantForm = {
+  rebalance: number;   // 1 | 3
+  nStocks: number;     // 5 | 10 | 20
+  cap: string;         // "all" | "large"
 };
 
-// Response shape from POST /factor-backtest — matches FactorBacktestResult in
-// api/factor_backtest.py.
+// Result shape — FactorBacktestResult in api/factor_backtest.py, as written
+// by run_factor_backtests.py (equity curve stored as parallel arrays and
+// expanded here).
 type FactorBacktestResponse = {
   strategy_name: string;
   strategy_category: string;
@@ -118,38 +116,86 @@ type FactorBacktestResponse = {
   warnings: string[];
 };
 
-const today = new Date();
-const defaultStart = new Date(2023, 0, 1);
-const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+type StoredResult = Omit<FactorBacktestResponse, "equity_curve"> & {
+  equity: { dates: string[]; portfolio: (number | null)[]; spy: (number | null)[] };
+};
 
-async function runFactorBacktest(apiUrl: string, req: {
-  strategy_key: string;
-  start_date: string;
-  end_date: string;
-  rebalance_months: number;
-  n_stocks: number;
-  tc_pct: number;
-  sector: string | null;
-  cap_tier: string | null;
-}): Promise<FactorBacktestResponse> {
-  const res = await fetch(`${apiUrl.replace(/\/$/, "")}/factor-backtest`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-    signal: AbortSignal.timeout(3 * 60 * 1000),
+async function loadFactorResult(strategyKey: string, form: VariantForm): Promise<FactorBacktestResponse> {
+  const vid = factorVariantId(form.cap, form.rebalance, form.nStocks);
+  const res = await fetch(`${FACTOR_CACHE_BASE}/${strategyKey}/${vid}.json`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
+    throw new Error(res.status === 404
+      ? "이 조합은 아직 계산되지 않았습니다. 다음 야간 갱신 후 다시 확인하세요."
+      : `결과 파일을 불러오지 못했습니다 (${res.status})`);
   }
-  return res.json();
+  const stored = (await res.json()) as StoredResult;
+  const { equity, ...rest } = stored;
+  const equity_curve: EquityPoint[] = equity.dates.map((date, i) => ({
+    date,
+    portfolio: equity.portfolio[i] ?? 0,
+    spy: equity.spy[i] ?? undefined,
+  }));
+  return { ...rest, equity_curve };
 }
 
-export function FactorLabClient({
-  presets,
-  sectors,
-  apiUrl,
-}: { presets: BacktestPreset[]; sectors: string[]; apiUrl?: string }) {
+function VariantSelectors({
+  form, setForm, index,
+}: { form: VariantForm; setForm: (f: VariantForm) => void; index: FactorIndex | null }) {
+  const caps = index?.variants.cap_tiers ?? [{ id: "all", label: "전체" }, { id: "large", label: "Large Cap" }];
+  const nOpts = index?.variants.n_stocks ?? [5, 10, 20];
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div>
+        <Label className="mb-1 block text-xs text-muted-foreground">리밸런싱</Label>
+        <Select value={String(form.rebalance)} onValueChange={(v) => setForm({ ...form, rebalance: parseInt((v as string) ?? "1") })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {REBAL_OPTS.map((r) => <SelectItem key={r.value} value={String(r.value)}>{r.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label className="mb-1 block text-xs text-muted-foreground">보유 종목 수</Label>
+        <Select value={String(form.nStocks)} onValueChange={(v) => setForm({ ...form, nStocks: parseInt((v as string) ?? "5") })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {nOpts.map((n) => <SelectItem key={n} value={String(n)}>{n}종목</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label className="mb-1 block text-xs text-muted-foreground">시총 구간</Label>
+        <Select value={form.cap} onValueChange={(v) => setForm({ ...form, cap: (v as string) ?? "all" })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {caps.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+function GridInfo({ index }: { index: FactorIndex | null }) {
+  if (!index) {
+    return (
+      <div className="text-xs text-warning">
+        사전 계산 결과 인덱스를 불러오지 못했습니다. 첫 야간 계산이 끝나면 표시됩니다.
+      </div>
+    );
+  }
+  const updated = new Date(index.updated_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short" });
+  return (
+    <div className="text-xs text-muted-foreground">
+      기간 {index.start_date} ~ {index.end_date} · 거래비용 {index.tc_pct}% · 전 섹터 · 데이터 기준일 {index.data_as_of} · 갱신 {updated} KST
+    </div>
+  );
+}
+
+export function FactorLabClient({ factorIndex }: { factorIndex: FactorIndex | null }) {
   return (
     <Tabs defaultValue="single">
       <TabsList className="flex flex-wrap gap-1 bg-transparent p-0">
@@ -165,11 +211,11 @@ export function FactorLabClient({
       </TabsList>
 
       <TabsContent value="single" className="mt-4">
-        <SingleTab sectors={sectors} presets={presets} apiUrl={apiUrl} />
+        <SingleTab index={factorIndex} />
       </TabsContent>
 
       <TabsContent value="compare" className="mt-4">
-        <CompareTab sectors={sectors} apiUrl={apiUrl} />
+        <CompareTab index={factorIndex} />
       </TabsContent>
 
       <TabsContent value="guide" className="mt-4">
@@ -181,42 +227,21 @@ export function FactorLabClient({
 
 // ─────────────── Tab 1: Single Strategy ───────────────
 
-function SingleTab({ sectors, apiUrl }: { sectors: string[]; presets: BacktestPreset[]; apiUrl?: string }) {
-  const [form, setForm] = useState<FormState>({
-    strategy: "momentum_12m",
-    startDate: isoDate(defaultStart),
-    endDate: isoDate(today),
-    rebalance: 1,
-    nStocks: "5",
-    tc: "0.30",
-    sector: "전체",
-    cap: "전체",
-  });
+function SingleTab({ index }: { index: FactorIndex | null }) {
+  const [strategy, setStrategy] = useState("rs_momentum");
+  const [form, setForm] = useState<VariantForm>({ rebalance: 1, nStocks: 5, cap: "all" });
   const [result, setResult] = useState<FactorBacktestResponse | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selected = STRATEGIES.find((s) => s.key === form.strategy);
+  const selected = STRATEGIES.find((s) => s.key === strategy);
 
   async function handleRun() {
-    if (!apiUrl) {
-      setError("백엔드 API가 설정되지 않았습니다. .env.local에 NEXT_PUBLIC_API_URL을 설정하세요.");
-      return;
-    }
     setIsRunning(true);
     setError(null);
     setResult(null);
     try {
-      const data = await runFactorBacktest(apiUrl, {
-        strategy_key: form.strategy,
-        start_date: form.startDate,
-        end_date: form.endDate,
-        rebalance_months: form.rebalance,
-        n_stocks: parseInt(form.nStocks) || 5,
-        tc_pct: parseFloat(form.tc) || 0.3,
-        sector: form.sector === "전체" ? null : form.sector,
-        cap_tier: form.cap === "전체" ? null : form.cap,
-      });
+      const data = await loadFactorResult(strategy, form);
       setResult(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -236,7 +261,7 @@ function SingleTab({ sectors, apiUrl }: { sectors: string[]; presets: BacktestPr
           <div className="grid gap-3 sm:grid-cols-[3fr_2fr]">
             <div>
               <Label className="mb-1 block text-xs text-muted-foreground">전략</Label>
-              <Select value={form.strategy} onValueChange={(v) => setForm({ ...form, strategy: (v as string) ?? "momentum_12m" })}>
+              <Select value={strategy} onValueChange={(v) => setStrategy((v as string) ?? "rs_momentum")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {STRATEGIES.map((s) => (
@@ -258,67 +283,12 @@ function SingleTab({ sectors, apiUrl }: { sectors: string[]; presets: BacktestPr
             </div>
           </div>
 
-          {/* Row 2: Date range + rebalance */}
-          <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">백테스트 기간</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
-                <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
-              </div>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">리밸런싱</Label>
-              <Select value={String(form.rebalance)} onValueChange={(v) => setForm({ ...form, rebalance: parseInt((v as string) ?? "1") })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {REBAL_OPTS.map((r) => (
-                    <SelectItem key={r.value} value={String(r.value)}>{r.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Row 3: n_stocks + tc + sector + cap */}
-          <div className="grid gap-3 sm:grid-cols-4">
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">보유 종목 수</Label>
-              <Input type="number" min={3} max={100} value={form.nStocks} onChange={(e) => setForm({ ...form, nStocks: e.target.value })} />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">거래비용 (%)</Label>
-              <Input type="number" step={0.05} value={form.tc} onChange={(e) => setForm({ ...form, tc: e.target.value })} />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">섹터 필터</Label>
-              <Select value={form.sector} onValueChange={(v) => setForm({ ...form, sector: (v as string) ?? "전체" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="전체">전체</SelectItem>
-                  {sectors.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">시총 구간</Label>
-              <Select value={form.cap} onValueChange={(v) => setForm({ ...form, cap: (v as string) ?? "전체" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CAP_OPTS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <VariantSelectors form={form} setForm={setForm} index={index} />
+          <GridInfo index={index} />
 
           <Button onClick={handleRun} disabled={isRunning} className="gap-1.5">
-            {isRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> 백테스트 실행 중...</> : <><Play className="h-4 w-4" /> 백테스트 실행</>}
+            {isRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중...</> : <><Play className="h-4 w-4" /> 결과 보기</>}
           </Button>
-          {isRunning && (
-            <div className="text-xs text-muted-foreground">
-              Render 서버가 콜드 스타트 상태이면 최초 요청은 1-2분 정도 소요될 수 있습니다.
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -437,17 +407,9 @@ function SingleResult({ data }: { data: FactorBacktestResponse }) {
 
 // ─────────────── Tab 2: Compare Strategies ───────────────
 
-function CompareTab({ sectors, apiUrl }: { sectors: string[]; apiUrl?: string }) {
-  const [selectedKeys, setSelectedKeys] = useState<string[]>(["momentum_12m", "low_volatility", "magic_formula"]);
-  const [form, setForm] = useState({
-    startDate: isoDate(defaultStart),
-    endDate: isoDate(today),
-    rebalance: 1,
-    nStocks: "5",
-    tc: "0.30",
-    sector: "전체",
-    cap: "전체",
-  });
+function CompareTab({ index }: { index: FactorIndex | null }) {
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(["rs_momentum", "rs_momentum_broad", "rs_3m", "momentum_12m"]);
+  const [form, setForm] = useState<VariantForm>({ rebalance: 1, nStocks: 5, cap: "all" });
   const [results, setResults] = useState<Array<{ key: string; data?: FactorBacktestResponse; error?: string }>>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -461,26 +423,13 @@ function CompareTab({ sectors, apiUrl }: { sectors: string[]; apiUrl?: string })
   }
 
   async function handleRun() {
-    if (!apiUrl) {
-      setError("백엔드 API가 설정되지 않았습니다.");
-      return;
-    }
     setIsRunning(true);
     setError(null);
     setResults([]);
 
     const promises = selectedKeys.map(async (key) => {
       try {
-        const data = await runFactorBacktest(apiUrl, {
-          strategy_key: key,
-          start_date: form.startDate,
-          end_date: form.endDate,
-          rebalance_months: form.rebalance,
-          n_stocks: parseInt(form.nStocks) || 5,
-          tc_pct: parseFloat(form.tc) || 0.3,
-          sector: form.sector === "전체" ? null : form.sector,
-          cap_tier: form.cap === "전체" ? null : form.cap,
-        });
+        const data = await loadFactorResult(key, form);
         return { key, data };
       } catch (e) {
         return { key, error: e instanceof Error ? e.message : String(e) };
@@ -497,7 +446,7 @@ function CompareTab({ sectors, apiUrl }: { sectors: string[]; apiUrl?: string })
         <CardHeader className="pb-2">
           <CardTitle className="text-base">복수 전략 비교</CardTitle>
           <CardDescription className="text-xs">
-            최대 5개 전략을 같은 조건으로 병렬 백테스트
+            최대 5개 전략을 같은 조건으로 나란히 비교
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -526,57 +475,11 @@ function CompareTab({ sectors, apiUrl }: { sectors: string[]; apiUrl?: string })
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">백테스트 기간</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
-                <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
-              </div>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">리밸런싱</Label>
-              <Select value={String(form.rebalance)} onValueChange={(v) => setForm({ ...form, rebalance: parseInt((v as string) ?? "1") })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {REBAL_OPTS.map((r) => <SelectItem key={r.value} value={String(r.value)}>{r.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-4">
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">보유 종목</Label>
-              <Input type="number" min={3} max={100} value={form.nStocks} onChange={(e) => setForm({ ...form, nStocks: e.target.value })} />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">거래비용 (%)</Label>
-              <Input type="number" step={0.05} value={form.tc} onChange={(e) => setForm({ ...form, tc: e.target.value })} />
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">섹터 필터</Label>
-              <Select value={form.sector} onValueChange={(v) => setForm({ ...form, sector: (v as string) ?? "전체" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="전체">전체</SelectItem>
-                  {sectors.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs text-muted-foreground">시총 구간</Label>
-              <Select value={form.cap} onValueChange={(v) => setForm({ ...form, cap: (v as string) ?? "전체" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CAP_OPTS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <VariantSelectors form={form} setForm={setForm} index={index} />
+          <GridInfo index={index} />
 
           <Button onClick={handleRun} disabled={isRunning || selectedKeys.length === 0} className="gap-1.5">
-            {isRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> 실행 중...</> : <><Play className="h-4 w-4" /> 비교 실행</>}
+            {isRunning ? <><Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중...</> : <><Play className="h-4 w-4" /> 비교 보기</>}
           </Button>
         </CardContent>
       </Card>
@@ -637,7 +540,64 @@ function CompareTab({ sectors, apiUrl }: { sectors: string[]; apiUrl?: string })
           </CardContent>
         </Card>
       )}
+
+      <GridRanking index={index} form={form} />
     </div>
+  );
+}
+
+/** Every strategy's metrics for one grid cell — straight from _index.json, no fetch. */
+function GridRanking({ index, form }: { index: FactorIndex | null; form: VariantForm }) {
+  if (!index) return null;
+  const vid = factorVariantId(form.cap, form.rebalance, form.nStocks);
+  const rows = Object.entries(index.strategies)
+    .map(([key, s]) => ({ key, name: s.name, category: s.category, v: s.variants[vid] }))
+    .filter((r) => r.v)
+    .sort((a, b) => (b.v.metrics.cagr_pct ?? -Infinity) - (a.v.metrics.cagr_pct ?? -Infinity));
+  if (rows.length === 0) return null;
+  const spy = rows[0].v.spy;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">전체 전략 순위 (CAGR)</CardTitle>
+        <CardDescription className="text-xs">
+          같은 조건의 {rows.length}개 전략 · SPY: CAGR {fmtPct(spy.cagr_pct)} · MDD {fmtPct(spy.max_drawdown_pct, false)}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-b border-border/60 bg-muted/20 text-left text-xs text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2">#</th>
+              <th className="px-3 py-2">전략</th>
+              <th className="px-3 py-2 text-right">CAGR</th>
+              <th className="px-3 py-2 text-right">Sharpe</th>
+              <th className="px-3 py-2 text-right">MDD</th>
+              <th className="hidden px-3 py-2 text-right sm:table-cell">변동성</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.key} className="border-b border-border/30">
+                <td className="px-3 py-2 text-muted-foreground tabular-nums">{i + 1}</td>
+                <td className="px-3 py-2">
+                  <span className="font-semibold">{r.name}</span>
+                  <Badge className={cn("ml-2 text-[10px]", CATEGORY_COLOR[(r.category as StrategyMeta["category"]) ?? "price"])}>
+                    {r.category === "price" ? "가격" : r.category === "fundamentals" ? "펀더멘털" : "복합"}
+                  </Badge>
+                </td>
+                <td className={cn("px-3 py-2 text-right tabular-nums", (r.v.metrics.cagr_pct ?? 0) >= 0 ? "text-success" : "text-destructive")}>
+                  {fmtPct(r.v.metrics.cagr_pct)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{r.v.metrics.sharpe?.toFixed(2) ?? "-"}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-destructive">{fmtPct(r.v.metrics.max_drawdown_pct, false)}</td>
+                <td className="hidden px-3 py-2 text-right tabular-nums sm:table-cell">{fmtPct(r.v.metrics.volatility_pct, false)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -450,6 +450,62 @@ export function getStocksMeta(): Promise<StockMeta[]> {
   return fetchCache<StockMeta[]>("stocks.json");
 }
 
+// ── Factor Lab (rule-based) precomputed grid ──────────────────────
+// Written nightly by stock-dashboard/streamlit_app/scripts/run_factor_backtests.py.
+// The page reads these files instead of asking the Render API to compute
+// a backtest per request (2+ min each on the S&P 1500 universe).
+
+export type FactorMetrics = {
+  total_return_pct?: number;
+  cagr_pct?: number;
+  sharpe?: number;
+  volatility_pct?: number;
+  max_drawdown_pct?: number;
+  period_win_rate_pct?: number;
+};
+
+export type FactorVariantSummary = {
+  metrics: FactorMetrics;
+  spy: FactorMetrics;
+  universe_size: number;
+  n_rebalances: number;
+  final_picks: string[];
+  final_picks_date: string | null;
+};
+
+export type FactorIndex = {
+  updated_at: string;
+  data_as_of: string;
+  start_date: string;
+  end_date: string;
+  tc_pct: number;
+  variants: {
+    cap_tiers: Array<{ id: string; label: string }>;
+    rebalance_months: number[];
+    n_stocks: number[];
+  };
+  strategies: Record<string, {
+    name: string;
+    category: string;
+    variants: Record<string, FactorVariantSummary>;
+  }>;
+};
+
+export const FACTOR_CACHE_BASE = `${CACHE_BASE}/factor_backtests`;
+
+/** Variant file name: `<cap>_<rebal>m_<n>` — mirrors variant_id() in the script. */
+export function factorVariantId(cap: string, rebal: number, n: number): string {
+  return `${cap}_${rebal}m_${n}`;
+}
+
+export async function getFactorIndex(): Promise<FactorIndex | null> {
+  try {
+    return await fetchCache<FactorIndex>("factor_backtests/_index.json");
+  } catch {
+    return null;
+  }
+}
+
 export function getBacktestPreset(id: string): Promise<BacktestPreset> {
   return fetchCache<BacktestPreset>(`backtests/${id}.json`);
 }
