@@ -199,9 +199,12 @@ function GridInfo({ index }: { index: FactorIndex | null }) {
     );
   }
   const updated = new Date(index.updated_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short" });
+  const period = index.start_dates
+    ? `가격 전략 ${index.start_dates.price} ~ · 펀더멘털 전략 ${index.start_dates.fundamentals} ~ ${index.end_date}`
+    : `기간 ${index.start_date} ~ ${index.end_date}`;
   return (
     <div className="text-xs text-muted-foreground">
-      기간 {index.start_date} ~ {index.end_date} · 거래비용 {index.tc_pct}% · 전 섹터 · 데이터 기준일 {index.data_as_of} · 갱신 {updated} KST
+      {period} · 거래비용 {index.tc_pct}% · 전 섹터 · 데이터 기준일 {index.data_as_of} · 갱신 {updated} KST
     </div>
   );
 }

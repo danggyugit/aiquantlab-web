@@ -477,6 +477,8 @@ export type FactorIndex = {
   updated_at: string;
   data_as_of: string;
   start_date: string;
+  /** Price strategies start earlier than fundamentals ones (PIT data reach). */
+  start_dates?: { price: string; fundamentals: string };
   end_date: string;
   tc_pct: number;
   variants: {
@@ -487,6 +489,7 @@ export type FactorIndex = {
   strategies: Record<string, {
     name: string;
     category: string;
+    start_date?: string;
     variants: Record<string, FactorVariantSummary>;
   }>;
 };
