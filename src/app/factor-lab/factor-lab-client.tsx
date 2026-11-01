@@ -199,8 +199,9 @@ function GridInfo({ index }: { index: FactorIndex | null }) {
     );
   }
   const updated = new Date(index.updated_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short" });
-  const period = index.start_dates
-    ? `가격 전략 ${index.start_dates.price} ~ · 펀더멘털 전략 ${index.start_dates.fundamentals} ~ ${index.end_date}`
+  const sd = index.start_dates;
+  const period = sd
+    ? `시작일 — 가격 전략: Large Cap ${sd.price_large.slice(0, 4)}년 · 전체 ${sd.price_all.slice(0, 4)}년 / 펀더멘털 전략: ${sd.fundamentals.slice(0, 4)}년 · 종료 ${index.end_date}`
     : `기간 ${index.start_date} ~ ${index.end_date}`;
   return (
     <div className="text-xs text-muted-foreground">

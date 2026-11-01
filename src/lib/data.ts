@@ -465,6 +465,7 @@ export type FactorMetrics = {
 };
 
 export type FactorVariantSummary = {
+  start_date?: string;
   metrics: FactorMetrics;
   spy: FactorMetrics;
   universe_size: number;
@@ -477,8 +478,10 @@ export type FactorIndex = {
   updated_at: string;
   data_as_of: string;
   start_date: string;
-  /** Price strategies start earlier than fundamentals ones (PIT data reach). */
-  start_dates?: { price: string; fundamentals: string };
+  /** Start depends on what each cell can be survivorship-corrected for:
+   *  large-cap price strategies reach back furthest (S&P 500 history),
+   *  all-tier ones to 2020 (S&P 600 history), fundamentals to 2023 (PIT). */
+  start_dates?: { price_large: string; price_all: string; fundamentals: string };
   end_date: string;
   tc_pct: number;
   variants: {
@@ -489,7 +492,6 @@ export type FactorIndex = {
   strategies: Record<string, {
     name: string;
     category: string;
-    start_date?: string;
     variants: Record<string, FactorVariantSummary>;
   }>;
 };
