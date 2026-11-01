@@ -362,6 +362,8 @@ function SingleResult({ data }: { data: FactorBacktestResponse }) {
             </div>
           )}
 
+          {data.equity_curve.length > 1 && <YearlyTable curve={data.equity_curve} />}
+
           {data.final_picks.length > 0 && (
             <div>
               <div className="mb-1.5 text-xs font-semibold text-muted-foreground">최종 편입 종목</div>
@@ -669,6 +671,101 @@ function StrategyGroup({ title, strategies }: { title: string; strategies: Strat
 }
 
 // ─────────────── Utility ───────────────
+
+// ── Year-by-year view ─────────────────────────────────────────
+// A 16-year CAGR hides which regimes made it. Per calendar year: strategy
+// return, SPY return, excess, and the worst drawdown inside that year; plus
+// the longest peak-to-recovery stretch over the whole curve.
+
+type YearRow = { year: string; port: number; spy?: number; excess?: number; mdd: number };
+
+function yearlyStats(curve: EquityPoint[]): { rows: YearRow[]; longestDD: { days: number; from: string; to: string } | null } {
+  const byYear = new Map<string, EquityPoint[]>();
+  for (const pt of curve) {
+    const y = pt.date.slice(0, 4);
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y)!.push(pt);
+  }
+  const rows: YearRow[] = [];
+  let prevPort: number | null = null;
+  let prevSpy: number | null | undefined = null;
+  for (const [year, pts] of byYear) {
+    const first = prevPort ?? pts[0].portfolio;
+    const last = pts[pts.length - 1].portfolio;
+    const port = (last / first - 1) * 100;
+    const spyFirst = prevSpy ?? pts[0].spy;
+    const spyLast = pts[pts.length - 1].spy;
+    const spy = spyFirst && spyLast ? (spyLast / spyFirst - 1) * 100 : undefined;
+    let peak = first;
+    let mdd = 0;
+    for (const pt of pts) {
+      if (pt.portfolio > peak) peak = pt.portfolio;
+      const dd = (pt.portfolio / peak - 1) * 100;
+      if (dd < mdd) mdd = dd;
+    }
+    rows.push({ year, port, spy, excess: spy !== undefined ? port - spy : undefined, mdd });
+    prevPort = last;
+    prevSpy = spyLast;
+  }
+  // Longest underwater stretch (peak → new high)
+  let longestDD: { days: number; from: string; to: string } | null = null;
+  let peakVal = -Infinity;
+  let peakDate = curve[0].date;
+  const dayMs = 86_400_000;
+  for (const pt of curve) {
+    if (pt.portfolio >= peakVal) {
+      const days = Math.round((Date.parse(pt.date) - Date.parse(peakDate)) / dayMs);
+      if (!longestDD || days > longestDD.days) longestDD = { days, from: peakDate, to: pt.date };
+      peakVal = pt.portfolio;
+      peakDate = pt.date;
+    }
+  }
+  // Still underwater at the end counts too
+  const lastPt = curve[curve.length - 1];
+  const tail = Math.round((Date.parse(lastPt.date) - Date.parse(peakDate)) / dayMs);
+  if (lastPt.portfolio < peakVal && (!longestDD || tail > longestDD.days)) {
+    longestDD = { days: tail, from: peakDate, to: `${lastPt.date} (미회복)` };
+  }
+  return { rows, longestDD };
+}
+
+function YearlyTable({ curve }: { curve: EquityPoint[] }) {
+  const { rows, longestDD } = yearlyStats(curve);
+  if (rows.length < 2) return null;
+  return (
+    <div>
+      <div className="mb-1.5 text-xs font-semibold text-muted-foreground">연도별 수익률</div>
+      <div className="overflow-x-auto rounded-lg border border-border/40">
+        <table className="w-full text-xs">
+          <thead className="border-b border-border/60 bg-muted/20 text-left text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5">연도</th>
+              <th className="px-2 py-1.5 text-right">전략</th>
+              <th className="px-2 py-1.5 text-right">SPY</th>
+              <th className="px-2 py-1.5 text-right">초과</th>
+              <th className="px-2 py-1.5 text-right">연중 MDD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.year} className="border-b border-border/30">
+                <td className="px-2 py-1.5 tabular-nums">{r.year}</td>
+                <td className={cn("px-2 py-1.5 text-right tabular-nums", r.port >= 0 ? "text-success" : "text-destructive")}>{fmtPct(r.port)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{fmtPct(r.spy)}</td>
+                <td className={cn("px-2 py-1.5 text-right tabular-nums font-semibold", (r.excess ?? 0) >= 0 ? "text-success" : "text-destructive")}>{fmtPct(r.excess)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-destructive">{fmtPct(r.mdd, false)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-1 text-[11px] text-muted-foreground">
+        SPY 초과 연도 {rows.filter((r) => (r.excess ?? 0) > 0).length}/{rows.filter((r) => r.excess !== undefined).length}
+        {longestDD && ` · 최장 낙폭 회복 ${longestDD.days}일 (${longestDD.from} → ${longestDD.to})`}
+      </div>
+    </div>
+  );
+}
 
 function fmtPct(v: number | undefined, withSign = true): string {
   if (v === undefined || v === null || Number.isNaN(v)) return "-";
