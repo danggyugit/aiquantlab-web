@@ -572,15 +572,24 @@ function GridRanking({ index, form }: { index: FactorIndex | null; form: Variant
   const rows = Object.entries(index.strategies)
     .map(([key, s]) => ({ key, name: s.name, category: s.category, v: s.variants[vid] }))
     .filter((r) => r.v && r.v.n_rebalances > 0)
-    .sort((a, b) => (b.v.metrics.cagr_pct ?? -Infinity) - (a.v.metrics.cagr_pct ?? -Infinity));
+    // Cells start on different dates (price × Large Cap reaches 2010,
+    // fundamentals 2012/2023), so rank within each start date rather than
+    // across them — a 2023-only CAGR is not comparable to a 16-year one.
+    .sort((a, b) => {
+      const sa = a.v.start_date ?? "", sb = b.v.start_date ?? "";
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      return (b.v.metrics.cagr_pct ?? -Infinity) - (a.v.metrics.cagr_pct ?? -Infinity);
+    });
   if (rows.length === 0) return null;
   const spy = rows[0].v.spy;
+  const multiStart = new Set(rows.map((r) => r.v.start_date ?? "")).size > 1;
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">전체 전략 순위 (CAGR)</CardTitle>
         <CardDescription className="text-xs">
-          같은 조건의 {rows.length}개 전략 · SPY: CAGR {fmtPct(spy.cagr_pct)} · MDD {fmtPct(spy.max_drawdown_pct, false)}
+          같은 조건의 {rows.length}개 전략 · SPY(최장 구간 기준): CAGR {fmtPct(spy.cagr_pct)} · MDD {fmtPct(spy.max_drawdown_pct, false)}
+          {multiStart && " · 시작 연도가 다른 전략끼리는 CAGR을 직접 비교할 수 없어 시작 연도별로 묶어 정렬"}
         </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
@@ -589,6 +598,7 @@ function GridRanking({ index, form }: { index: FactorIndex | null; form: Variant
             <tr>
               <th className="px-3 py-2">#</th>
               <th className="px-3 py-2">전략</th>
+              <th className="px-3 py-2">시작</th>
               <th className="px-3 py-2 text-right">CAGR</th>
               <th className="px-3 py-2 text-right">Sharpe</th>
               <th className="px-3 py-2 text-right">MDD</th>
@@ -597,7 +607,7 @@ function GridRanking({ index, form }: { index: FactorIndex | null; form: Variant
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.key} className="border-b border-border/30">
+              <tr key={r.key} className={cn("border-b border-border/30", i > 0 && rows[i - 1].v.start_date !== r.v.start_date && "border-t-2 border-t-border")}>
                 <td className="px-3 py-2 text-muted-foreground tabular-nums">{i + 1}</td>
                 <td className="px-3 py-2">
                   <span className="font-semibold">{r.name}</span>
@@ -605,6 +615,7 @@ function GridRanking({ index, form }: { index: FactorIndex | null; form: Variant
                     {r.category === "price" ? "가격" : r.category === "fundamentals" ? "펀더멘털" : "복합"}
                   </Badge>
                 </td>
+                <td className="px-3 py-2 tabular-nums text-muted-foreground">{r.v.start_date?.slice(0, 4) ?? "-"}~</td>
                 <td className={cn("px-3 py-2 text-right tabular-nums", (r.v.metrics.cagr_pct ?? 0) >= 0 ? "text-success" : "text-destructive")}>
                   {fmtPct(r.v.metrics.cagr_pct)}
                 </td>
