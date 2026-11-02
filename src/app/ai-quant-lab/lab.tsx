@@ -433,7 +433,7 @@ function PresetLoader({
           </Badge>
         </div>
         <CardDescription className="text-xs">
-          매일 자동 계산되는 백테스트 결과. 섹터 · 전략 선택 → 로드.
+          백테스트 성과는 매주 일요일 밤 전체 재계산(2010년~), 오늘의 픽은 매일 갱신. 섹터 · 전략 선택 → 로드.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
